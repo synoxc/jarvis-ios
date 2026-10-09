@@ -1,0 +1,61 @@
+{
+  "name": "jarvis-ios",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "build:ios:dev": "eas build --profile development --platform ios",
+    "build:ios:preview": "eas build --profile preview --platform ios"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/*.test.ts",
+      "**/*.test.tsx"
+    ],
+    "transform": {
+      "^.+\\.(js|jsx|ts|tsx)$": "babel-jest"
+    },
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/_backup"
+    ]
+  },
+  "dependencies": {
+    "@expo/config-plugins": "~57.0.0",
+    "@react-native-async-storage/async-storage": "3.1.1",
+    "crypto-js": "^4.2.0",
+    "expo": "~57.0.0",
+    "expo-audio-stream-pcm": "^0.2.0",
+    "expo-camera": "57.0.6",
+    "expo-constants": "57.0.21",
+    "expo-linking": "57.0.12",
+    "expo-local-authentication": "57.0.3",
+    "expo-router": "57.0.25",
+    "expo-secure-store": "57.0.4",
+    "expo-speech": "57.0.3",
+    "expo-speech-recognition": "57.1.1",
+    "expo-status-bar": "57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "5.10.1",
+    "react-native-screens": "4.29.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "@react-native/jest-preset": "^0.87.1",
+    "@types/crypto-js": "^4.2.2",
+    "@types/jest": "^30.0.0",
+    "@types/react": "~19.2.0",
+    "expo-doctor": "^1.20.4",
+    "jest": "^30.5.2",
+    "jest-expo": "^57.0.5",
+    "typescript": "~5.9.0"
+  },
+  "private": true
+}

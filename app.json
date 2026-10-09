@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "JARVIS",
+    "slug": "jarvis-ios",
+    "version": "1.0.0",
+    "scheme": "jarvis",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "backgroundColor": "#07090f",
+    "primaryColor": "#22d3ee",
+    "ios": {
+      "bundleIdentifier": "com.pessoal.jarvis",
+      "supportsTablet": false,
+      "deploymentTarget": "17.0",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "O JARVIS usa o microfone para reconhecer a tua voz e falar com o teu computador.",
+        "NSSpeechRecognitionUsageDescription": "O JARVIS usa o reconhecimento de voz para entender os teus comandos em Português.",
+        "NSFaceIDUsageDescription": "O JARVIS usa o Face ID para proteger o acesso ao teu computador.",
+        "NSLocalNetworkUsageDescription": "O JARVIS precisa de aceder ao teu PC na rede local para enviar comandos e receber respostas.",
+        "NSHealthShareUsageDescription": "O JARVIS pode ler os teus dados de atividade física (passos, treinos) se tu autorizares.",
+        "NSHealthUpdateUsageDescription": "O JARVIS não escreve dados de saúde.",
+        "UIBackgroundModes": [
+          "audio",
+          "processing"
+        ],
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-speech-recognition",
+      "./plugins/withJarvisHealth.js",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "O JARVIS usa a câmara para leres o código QR de emparelhamento com o teu PC.",
+          "microphonePermission": "O JARVIS usa o microfone para falar com o teu computador."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "O JARVIS usa o Face ID para proteger o acesso ao teu PC."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "defaultHost": "192.168.1.100",
+      "defaultPort": 8000,
+      "router": {},
+      "eas": {
+        "projectId": "9343f08b-914a-4300-b9b2-664cfc6ebf2b"
+      }
+    },
+    "owner": "devsynoxc"
+  }
+}
