@@ -40,7 +40,16 @@ jobs:
         run: npm ci
 
       - name: Expo prebuild (gera/atualiza ios/)
-        run: npx expo prebuild --platform ios --non-interactive
+        run: npx expo prebuild --platform ios
+
+      # Modulo nativo manual: o prebuild nao conhece ios/JarvisHealth,
+      # por isso copia-se de modules/ para dentro do projeto gerado.
+      - name: Restore JarvisHealth native module
+        run: |
+          mkdir -p ios/JarvisHealth
+          cp modules/jarvis-health/ios/JarvisHealth.swift ios/JarvisHealth/
+          cp modules/jarvis-health/ios/JarvisHealth.podspec ios/JarvisHealth/
+          ls ios/JarvisHealth/
 
       - name: Setup Ruby + CocoaPods
         uses: ruby/setup-ruby@v1

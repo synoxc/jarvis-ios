@@ -1,0 +1,16 @@
+{
+  "name": "jarvis-health",
+  "version": "1.0.0",
+  "description": "Leitura de dados de atividade fisica do HealthKit (iOS).",
+  "main": "index.ts",
+  "ios": {
+    "modules": ["JarvisHealthModule"]
+  },
+  "expo": {
+    "autolinking": {
+      "ios": {
+        "modules": ["JarvisHealthModule"]
+      }
+    }
+  }
+}
