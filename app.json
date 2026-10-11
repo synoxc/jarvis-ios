@@ -1,4 +1,4 @@
-{
+﻿{
   "expo": {
     "name": "JARVIS",
     "slug": "jarvis-ios",
@@ -6,7 +6,6 @@
     "scheme": "jarvis",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "backgroundColor": "#07090f",
     "primaryColor": "#22d3ee",
     "ios": {
@@ -15,15 +14,13 @@
       "deploymentTarget": "17.0",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "O JARVIS usa o microfone para reconhecer a tua voz e falar com o teu computador.",
-        "NSSpeechRecognitionUsageDescription": "O JARVIS usa o reconhecimento de voz para entender os teus comandos em Português.",
+        "NSSpeechRecognitionUsageDescription": "O JARVIS usa o reconhecimento de voz para entender os teus comandos em Portugues.",
         "NSFaceIDUsageDescription": "O JARVIS usa o Face ID para proteger o acesso ao teu computador.",
         "NSLocalNetworkUsageDescription": "O JARVIS precisa de aceder ao teu PC na rede local para enviar comandos e receber respostas.",
-        "NSHealthShareUsageDescription": "O JARVIS pode ler os teus dados de atividade física (passos, treinos) se tu autorizares.",
-        "NSHealthUpdateUsageDescription": "O JARVIS não escreve dados de saúde.",
-        "UIBackgroundModes": [
-          "audio",
-          "processing"
-        ],
+        "NSHealthShareUsageDescription": "O JARVIS pode ler os teus dados de atividade fisica (passos, treinos) se tu autorizares.",
+        "NSHealthUpdateUsageDescription": "O JARVIS nao escreve dados de saude.",
+        "UIBackgroundModes": ["audio", "processing"],
+        "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }
@@ -37,7 +34,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "O JARVIS usa a câmara para leres o código QR de emparelhamento com o teu PC.",
+          "cameraPermission": "O JARVIS usa a camara para leres o codigo QR de emparelhamento com o teu PC.",
           "microphonePermission": "O JARVIS usa o microfone para falar com o teu computador."
         }
       ],
@@ -52,7 +49,7 @@
       "typedRoutes": true
     },
     "extra": {
-      "defaultHost": "192.168.1.100",
+      "defaultHost": "10.0.0.118",
       "defaultPort": 8000,
       "router": {},
       "eas": {

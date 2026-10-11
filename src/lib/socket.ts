@@ -37,7 +37,7 @@ export class JarvisSocket {
 
   private get url(): string {
     const tok = encodeURIComponent(this.session?.token ?? '');
-    return `wss://${this.host}:${this.port}/ws?token=${tok}`;
+    return `ws://${this.host}:${this.port}/ws?token=${tok}`;
   }
 
   connect(): void {

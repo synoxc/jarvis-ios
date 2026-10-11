@@ -1,24 +1,31 @@
-import * as Speech from 'expo-speech';
-import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
+﻿import * as Speech from 'expo-speech';
 
-/**
- * Ditado iOS nativo (SFSpeechRecognizer) + TTS (expo-speech).
- *
- * Fallback de voz quando o áudio em tempo real não está disponível, e também
- * usado para ler as respostas do JARVIS em voz alta (pt-PT).
- *
- * API confirmada em node_modules/expo-speech-recognition (SDK 57):
- *  - ExpoSpeechRecognitionModule.start({lang, interimResults, continuous, ...})
- *  - ExpoSpeechRecognitionModule.stop() / abort()
- *  - Permissões: requestMicrophonePermissionsAsync / requestSpeechRecognizerPermissionsAsync
- *  - Eventos (via addListener): 'result' {isFinal, results:[{transcript}]},
- *    'error' {error, message}, 'end', 'audiostart'.
- */
+// `expo-speech-recognition` chama requireNativeModule() no topo do modulo e,
+// dentro do Expo Go (sem o modulo nativo), rebenta APENAS ao ser importado.
+// Carregamo-lo com require() guardado para a app arrancar sempre de forma segura.
+let ExpoSpeechRecognitionModule: typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule | null =
+  null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  ExpoSpeechRecognitionModule = require('expo-speech-recognition').ExpoSpeechRecognitionModule;
+} catch {
+  ExpoSpeechRecognitionModule = null;
+}
+
+/** `true` quando o ditado nativo esta presente (build com modulos nativos). */
+export function isDictationAvailable(): boolean {
+  return ExpoSpeechRecognitionModule != null;
+}
+
+/** Motivo honesto mostrado ao utilizador quando o ditado nao existe na Expo Go. */
+export const DICTATION_UNAVAILABLE_MESSAGE =
+  'Ditado continuo por modulo nativo indisponivel na Expo Go. Usa o microfone nativo do teclado do teu iPhone (ao lado da barra de espaco) para ditar mensagens.';
 
 export const LOCALE_PT_PT = 'pt-PT';
 
-/** Pede as permissões de microfone + reconhecimento de voz. */
+/** Pede as permissoes de microfone + reconhecimento de voz. */
 export async function requestVoicePermissions(): Promise<boolean> {
+  if (!ExpoSpeechRecognitionModule) return false;
   const mic = await ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync();
   const rec =
     await ExpoSpeechRecognitionModule.requestSpeechRecognizerPermissionsAsync();
@@ -30,14 +37,19 @@ type PartialHandler = (partial: string) => void;
 type ErrorHandler = (message: string) => void;
 type DoneHandler = () => void;
 
-/** Sessão de ditado. Devolve um handle com stop(). */
+/** Sessao de ditado nativo (disponivel em builds compiladas). */
 export function startDictation(handlers: {
   onPartial?: PartialHandler;
   onResult?: ResultHandler;
   onError?: ErrorHandler;
   onDone?: DoneHandler;
 }): { stop: () => void } {
-  const resultSub = ExpoSpeechRecognitionModule.addListener('result', (event) => {
+  if (!ExpoSpeechRecognitionModule) {
+    handlers.onError?.(DICTATION_UNAVAILABLE_MESSAGE);
+    return { stop: () => {} };
+  }
+  const mod = ExpoSpeechRecognitionModule;
+  const resultSub = mod.addListener('result', (event) => {
     const transcript: string = event?.results?.[0]?.transcript ?? '';
     if (event?.isFinal) {
       handlers.onResult?.(transcript);
@@ -46,20 +58,19 @@ export function startDictation(handlers: {
     }
   });
 
-  const errorSub = ExpoSpeechRecognitionModule.addListener('error', (event) => {
+  const errorSub = mod.addListener('error', (event) => {
     handlers.onError?.(event?.message ?? event?.error ?? 'Erro de reconhecimento.');
   });
 
-  const endSub = ExpoSpeechRecognitionModule.addListener('end', () => {
+  const endSub = mod.addListener('end', () => {
     handlers.onDone?.();
   });
 
   try {
-    ExpoSpeechRecognitionModule.start({
+    mod.start({
       lang: LOCALE_PT_PT,
       interimResults: true,
       continuous: false,
-      // Usa a categoria de gravação+voz do iOS.
       iosCategory: {
         category: 'playAndRecord',
         categoryOptions: ['defaultToSpeaker', 'allowBluetooth'],
@@ -73,7 +84,7 @@ export function startDictation(handlers: {
   return {
     stop: () => {
       try {
-        ExpoSpeechRecognitionModule.stop();
+        mod.stop();
       } catch {
         /* ignora */
       }
@@ -84,14 +95,40 @@ export function startDictation(handlers: {
   };
 }
 
-/** Fala `text` em pt-PT. Devolve uma função para interromper. */
+/** Limpa markdown e marcadores tecnicos para a voz do assistente soar natural. */
+export function cleanTextForSpeech(raw: string): string {
+  if (!raw) return '';
+  return raw
+    .replace(/\[.*?\]/g, '') // remove marcadores como [Vision], [SYS: ...]
+    .replace(/```[\s\S]*?```/g, 'código omitido')
+    .replace(/`.*?`/g, '')
+    .replace(/[*_#~>]/g, '')
+    .replace(/https?:\/\/\S+/g, 'link')
+    .trim();
+}
+
+/** Fala `text` em pt-PT atraves do sintetizador de voz nativo da Apple (expo-speech). */
 export function speak(text: string, onDone?: () => void): { stop: () => void } {
-  Speech.speak(text, {
+  try {
+    Speech.stop();
+  } catch {
+    /* ignora */
+  }
+
+  const clean = cleanTextForSpeech(text);
+  if (!clean) {
+    onDone?.();
+    return { stop: () => {} };
+  }
+
+  Speech.speak(clean, {
     language: LOCALE_PT_PT,
     pitch: 1.0,
-    rate: 0.95,
+    rate: 0.98,
     onDone,
+    onError: () => onDone?.(),
   });
+
   return {
     stop: () => {
       try {
@@ -110,4 +147,3 @@ export function stopSpeaking(): void {
     /* ignora */
   }
 }
-

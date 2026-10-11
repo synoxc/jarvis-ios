@@ -249,4 +249,49 @@ describe('regressao QR/PIN - parser do URL do QR', () => {
   });
 });
 
+describe('regressao QR/PIN - Teste 7: PIN fixo JARVIS', () => {
+  // O PIN de emparelhamento é sempre JARVIS (server.py new_key devolve
+  // 'JARVIS' e as chaves mestre não são consumidas em /login nem /auto-login).
+  it('aceita o PIN fixo JARVIS (normalizado em maiusculas, nunca guardado como device_token)', async () => {
+    const storage = makeStorage();
+    const api = makeApi();
+    api.loginWithPin.mockResolvedValue({ ok: true, token: 'bearer-ficticio' });
+    // Replica a normalização do JarvisContext.pairWithPin: trim + uppercase.
+    const pin = '  jarvis  '.trim().toUpperCase();
+    const out = await pairWithPin(api, storage, HOST, PORT, pin);
+    expect(out.ok).toBe(true);
+    expect(api.loginWithPin).toHaveBeenCalledWith(HOST, PORT, 'JARVIS');
+    const saved = storage.peek();
+    expect(saved!.deviceToken).toBe('');
+    expect(saved!.deviceToken).not.toBe('JARVIS');
+  });
+
+  it('PIN vazio nao emparelha (JARVIS tem de estar presente)', async () => {
+    const storage = makeStorage();
+    const api = makeApi();
+    api.loginWithPin.mockResolvedValue({ ok: false, error: 'Invalid or expired key' });
+    const out = await pairWithPin(api, storage, HOST, PORT, '');
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(/invalid/i);
+  });
+
+  it('parser do QR aceita o PIN fixo na chave do URL (key=JARVIS)', () => {
+    // Réplica pura de parseAutoLoginUrl (app/pair.tsx) — ver describe anterior.
+    function parseUrl(url: string): { host: string; port: number; key: string } | null {
+      try {
+        const m = url.match(/^https?:\/\/([^/:]+):(\d+)\/auto-login\?key=([A-Z0-9]+)/i);
+        if (m) return { host: m[1], port: parseInt(m[2], 10), key: m[3].toUpperCase() };
+        const m2 = url.match(/^https?:\/\/([^/:]+)\/auto-login\?key=([A-Z0-9]+)/i);
+        if (m2) return { host: m2[1], port: 8000, key: m2[2].toUpperCase() };
+        return null;
+      } catch {
+        return null;
+      }
+    }
+    const parsed = parseUrl(`https://${HOST}:${PORT}/auto-login?key=JARVIS`);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.key).toBe('JARVIS');
+  });
+});
+
 

@@ -6,22 +6,25 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, type BarcodeType } from 'expo-camera';
 import { useJarvis } from '@/state/JarvisContext';
 import { theme } from '@/theme';
 import Constants from 'expo-constants';
 
+const BARCODE_SETTINGS: { barcodeTypes: BarcodeType[] } = { barcodeTypes: ['qr'] };
+
 /**
- * Ecrã de emparelhamento.
- * - Modo QR: lê um URL `https://HOST:PORT/auto-login?key=XXXX` mostrado no PC.
+ * Ecra de emparelhamento.
+ * - Modo QR: le um URL `http://HOST:PORT/auto-login?key=XXXX` mostrado no PC.
  * - Modo manual: introduz host/porta + PIN de 6 caracteres.
  */
 export default function PairScreen() {
   const router = useRouter();
-  const { pairWithPin, pairWithQr } = useJarvis();
+  const { pairWithPin, pairWithQr, error: contextError } = useJarvis();
   const [permission, requestPermission] = useCameraPermissions();
 
   const [mode, setMode] = useState<'qr' | 'manual'>('qr');
@@ -34,48 +37,100 @@ export default function PairScreen() {
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [scanned, setScanned] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  // Emparelhamento manual por PIN (sessão única, sem re-login persistente).
+  // Mostra o erro local ou do contexto (o mais recente)
+  const displayError = localError ?? contextError;
+
+  // Emparelhamento manual por PIN (sessao unica, sem re-login persistente).
   const doPairManual = async (h: string, p: number, code: string) => {
+    setLocalError(null);
     setBusy(true);
-    const ok = await pairWithPin(h, p, code);
-    setBusy(false);
-    if (ok) router.replace('/');
+    try {
+      const ok = await pairWithPin(h, p, code);
+      if (ok) {
+        router.replace('/');
+      }
+      // Se !ok, o erro ja foi colocado no contexto por pairWithPin
+    } catch (e) {
+      setLocalError(
+        e instanceof Error ? e.message : 'Erro inesperado ao emparelhar.',
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   // QR: consome /auto-login e guarda o device_token real (re-login persistente).
   const doPairQr = async (h: string, p: number, code: string) => {
+    setLocalError(null);
     setBusy(true);
-    const ok = await pairWithQr(h, p, code);
-    setBusy(false);
-    if (ok) router.replace('/');
+    try {
+      const ok = await pairWithQr(h, p, code);
+      if (ok) {
+        router.replace('/');
+      }
+    } catch (e) {
+      setLocalError(
+        e instanceof Error ? e.message : 'Erro inesperado ao emparelhar via QR.',
+      );
+    } finally {
+      setBusy(false);
+      setScanned(false);
+    }
   };
 
   const onScan = ({ data }: { data: string }) => {
     if (scanned) return;
     setScanned(true);
-    const parsed = parseAutoLoginUrl(data);
+    const trimmed = (data || '').trim();
+    if (trimmed.startsWith('exp://')) {
+      setLocalError(
+        'Leste o QR do terminal (Expo Metro). No PC, clica no botão "Remote Control" na janela do JARVIS para ver o QR do assistente, ou usa a aba Manual (PIN: JARVIS).',
+      );
+      setScanned(false);
+      return;
+    }
+    const parsed = parseAutoLoginUrl(trimmed);
     if (parsed) {
       doPairQr(parsed.host, parsed.port, parsed.key);
     } else {
+      setLocalError(
+        `Conteúdo lido: "${trimmed.slice(0, 45)}...". Não é um código do JARVIS. Clica em "Remote Control" no JARVIS ou usa a aba Manual (PIN: JARVIS).`,
+      );
       setScanned(false);
     }
+  };
+
+  const retry = () => {
+    setLocalError(null);
+    setScanned(false);
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.tabs}>
-        <Tab label="QR Code" active={mode === 'qr'} onPress={() => setMode('qr')} />
-        <Tab label="Manual" active={mode === 'manual'} onPress={() => setMode('manual')} />
+        <Tab label="QR Code" active={mode === 'qr'} onPress={() => { setMode('qr'); retry(); }} />
+        <Tab label="Manual" active={mode === 'manual'} onPress={() => { setMode('manual'); retry(); }} />
       </View>
+
+      {/* Barra de erro visivel */}
+      {displayError ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{displayError}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={retry}>
+            <Text style={styles.retryBtnText}>Tentar novamente</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {mode === 'qr' ? (
         <View style={styles.qrWrap}>
           {!permission?.granted ? (
             <View style={styles.center}>
-              <Text style={styles.hint}>Preciso da câmara para ler o QR.</Text>
+              <Text style={styles.hint}>Preciso da camara para ler o QR.</Text>
               <TouchableOpacity style={styles.primaryBtn} onPress={requestPermission}>
-                <Text style={styles.primaryBtnText}>Permitir câmara</Text>
+                <Text style={styles.primaryBtnText}>Permitir camara</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -83,19 +138,19 @@ export default function PairScreen() {
               style={StyleSheet.absoluteFill}
               facing="back"
               onBarcodeScanned={scanned ? undefined : onScan}
-              barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+              barcodeScannerSettings={BARCODE_SETTINGS}
             />
           )}
           {busy ? (
             <View style={styles.overlay}>
               <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={styles.overlayText}>A emparelhar…</Text>
+              <Text style={styles.overlayText}>A emparelhar...</Text>
             </View>
           ) : null}
         </View>
       ) : (
-        <View style={styles.form}>
-          <Label>Endereço do PC</Label>
+        <ScrollView style={styles.form} keyboardShouldPersistTaps="handled">
+          <Label>Endereco do PC</Label>
           <TextInput
             style={styles.input}
             value={host}
@@ -114,12 +169,12 @@ export default function PairScreen() {
             placeholderTextColor={theme.colors.textDim}
             keyboardType="number-pad"
           />
-          <Label>Código de emparelhamento (PIN)</Label>
+          <Label>Codigo de emparelhamento (PIN)</Label>
           <TextInput
             style={[styles.input, styles.pinInput]}
             value={pin}
             onChangeText={(t) => setPin(t.toUpperCase())}
-            placeholder="ABC123"
+            placeholder="JARVIS"
             placeholderTextColor={theme.colors.textDim}
             autoCapitalize="characters"
             maxLength={6}
@@ -136,10 +191,18 @@ export default function PairScreen() {
             )}
           </TouchableOpacity>
           <Text style={styles.help}>
-            No PC, abre o JARVIS → Controlo Remoto → lê o QR ou o código de 6
-            caracteres.
+            {'No PC, abre o JARVIS → Controlo Remoto → lê o QR ou usa o PIN\n(por omissão: JARVIS).'}
           </Text>
-        </View>
+
+          <View style={styles.certHelpBox}>
+            <Text style={styles.certHelpTitle}>Ligação na Rede Local</Text>
+            <Text style={styles.certHelpText}>
+              A ligação é feita por HTTP direto na porta 8000 (sem necessidade de certificados no iPhone).{'\n\n'}
+              • Confirma que o iPhone está ligado ao Wi-Fi do mesmo router onde o PC está ligado por cabo.{'\n'}
+              • Não uses redes de convidados (Guest Wi-Fi), pois costumam isolar os dispositivos.
+            </Text>
+          </View>
+        </ScrollView>
       )}
     </SafeAreaView>
   );
@@ -157,15 +220,31 @@ function Label({ children }: { children: string }) {
   return <Text style={styles.label}>{children}</Text>;
 }
 
-/** Extrai host/porta/key de um URL `/auto-login?key=...`. */
+/** Extrai host/porta/key de um URL `/auto-login?key=...` ou PIN direto. */
 export function parseAutoLoginUrl(
   url: string,
 ): { host: string; port: number; key: string } | null {
   try {
-    const m = url.match(/^https?:\/\/([^/:]+):(\d+)\/auto-login\?key=([A-Z0-9]+)/i);
+    const raw = (url || '').trim();
+    // 1. URL completo com porta: http(s)://HOST:PORT/auto-login?key=XXXX
+    const m = raw.match(/https?:\/\/([^/:]+):(\d+)\/auto-login\?[^#]*\bkey=([A-Z0-9]+)/i);
     if (m) return { host: m[1], port: parseInt(m[2], 10), key: m[3].toUpperCase() };
-    const m2 = url.match(/^https?:\/\/([^/:]+)\/auto-login\?key=([A-Z0-9]+)/i);
+
+    // 2. URL sem porta (omissao porta 8000)
+    const m2 = raw.match(/https?:\/\/([^/:]+)\/auto-login\?[^#]*\bkey=([A-Z0-9]+)/i);
     if (m2) return { host: m2[1], port: 8000, key: m2[2].toUpperCase() };
+
+    // 3. Formato IP:PORT/auto-login?key=...
+    const m3 = raw.match(/([^/:]+):(\d+)[^?]*[?&]key=([A-Z0-9]+)/i);
+    if (m3) return { host: m3[1], port: parseInt(m3[2], 10), key: m3[3].toUpperCase() };
+
+    // 4. Se o QR for apenas o PIN direto (ex: "JARVIS")
+    if (/^[A-Z0-9]{4,8}$/i.test(raw)) {
+      const defaultHost = (Constants.expoConfig?.extra?.defaultHost as string) ?? '10.0.0.118';
+      const defaultPort = (Constants.expoConfig?.extra?.defaultPort as number) ?? 8000;
+      return { host: defaultHost, port: defaultPort, key: raw.toUpperCase() };
+    }
+
     return null;
   } catch {
     return null;
@@ -213,5 +292,42 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { color: theme.colors.bg, fontWeight: '700', fontSize: 16 },
   help: { color: theme.colors.textDim, fontSize: 12, marginTop: 16, lineHeight: 18 },
+  errorContainer: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+    padding: 12,
+    backgroundColor: '#2a1414',
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: '#4a2020',
+  },
+  errorText: { color: theme.colors.danger, fontSize: 13, lineHeight: 19 },
+  retryBtn: {
+    marginTop: 10,
+    alignSelf: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  retryBtnText: { color: theme.colors.text, fontWeight: '600', fontSize: 13 },
+  certHelpBox: {
+    marginTop: 24,
+    padding: 14,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: '#2a2a3a',
+  },
+  certHelpTitle: {
+    color: theme.colors.primary,
+    fontWeight: '700',
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  certHelpText: {
+    color: theme.colors.textDim,
+    fontSize: 12,
+    lineHeight: 18,
+  },
 });
-

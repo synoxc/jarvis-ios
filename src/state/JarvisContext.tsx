@@ -1,4 +1,4 @@
-import React, {
+﻿import React, {
   createContext,
   useCallback,
   useContext,
@@ -8,14 +8,27 @@ import React, {
   useState,
 } from 'react';
 import { JarvisSocket } from '@/lib/socket';
-import { LiveAudioService } from '@/lib/liveAudio';
+import {
+  LiveAudioService,
+  isLiveAudioAvailable,
+  LIVE_AUDIO_UNAVAILABLE_MESSAGE,
+} from '@/lib/liveAudio';
 import * as api from '@/lib/api';
 import * as voice from '@/lib/voice';
+import { pickAndUploadImage } from '@/lib/imageUpload';
+import { isDictationAvailable, DICTATION_UNAVAILABLE_MESSAGE } from '@/lib/voice';
 import {
   loadConnectionConfig,
   saveConnectionConfig,
   clearConnectionConfig,
 } from '@/lib/storage';
+import {
+  startJarvisLiveActivity,
+  stopJarvisLiveActivity,
+  updateJarvisLiveActivityAttributes,
+  mapToJarvisLiveActivityAttributes,
+  isLiveActivityAvailable,
+} from '@/liveActivity/JarvisLiveActivityManager';
 import type {
   AssistantState,
   ChatMessage,
@@ -34,6 +47,8 @@ interface JarvisContextValue {
   port: number;
   paired: boolean;
   error: string | null;
+  /** Capacidades reais desta build (Expo Go nao inclui modulos nativos). */
+  capabilities: { dictation: boolean; liveAudio: boolean; liveActivity: boolean };
   pairWithPin: (host: string, port: number, pin: string) => Promise<boolean>;
   pairWithQr: (host: string, port: number, key: string) => Promise<boolean>;
   reconnect: () => Promise<void>;
@@ -41,11 +56,15 @@ interface JarvisContextValue {
   sendText: (text: string) => void;
   clearMessages: () => void;
   voiceMode: VoiceMode;
+  autoSpeak: boolean;
+  toggleAutoSpeak: () => void;
   startDictation: () => Promise<void>;
   stopDictation: () => void;
   startLiveAudio: () => Promise<void>;
   stopLiveAudio: () => void;
   speakLast: () => void;
+  speakText: (text: string) => void;
+  uploadAndAnalyze: () => Promise<void>;
   stopSpeaking: () => void;
 }
 
@@ -72,12 +91,29 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
   const [paired, setPaired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState<VoiceMode>('idle');
+  const [autoSpeak, setAutoSpeak] = useState(true);
 
   const socketRef = useRef<JarvisSocket | null>(null);
   const liveAudioRef = useRef<LiveAudioService | null>(null);
   const sessionRef = useRef<Session | null>(null);
   const dictationStopRef = useRef<null | (() => void)>(null);
   const speakStopRef = useRef<null | (() => void)>(null);
+  const autoSpeakRef = useRef(true);
+
+  useEffect(() => {
+    autoSpeakRef.current = autoSpeak;
+  }, [autoSpeak]);
+
+  const toggleAutoSpeak = useCallback(() => {
+    setAutoSpeak((prev) => {
+      const next = !prev;
+      if (!next) {
+        voice.stopSpeaking();
+        setVoiceMode((m) => (m === 'speaking' ? 'idle' : m));
+      }
+      return next;
+    });
+  }, []);
 
   const pushMessage = useCallback(
     (speaker: ChatMessage['speaker'], text: string) => {
@@ -89,11 +125,39 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const capabilities = useMemo(
+    () => ({
+      dictation: isDictationAvailable(),
+      liveAudio: isLiveAudioAvailable(),
+      liveActivity: isLiveActivityAvailable(),
+    }),
+    [],
+  );
+
+  const speakText = useCallback((text: string) => {
+    speakStopRef.current?.();
+    setVoiceMode('speaking');
+    const handle = voice.speak(text, () => {
+      setVoiceMode((m) => (m === 'speaking' ? 'idle' : m));
+    });
+    speakStopRef.current = handle.stop;
+  }, []);
+
+  const stopSpeaking = useCallback(() => {
+    speakStopRef.current?.();
+    speakStopRef.current = null;
+    voice.stopSpeaking();
+    setVoiceMode((m) => (m === 'speaking' ? 'idle' : m));
+  }, []);
+
   const handleServerMessage = useCallback(
     (msg: ServerMessage) => {
       switch (msg.type) {
         case 'log':
           pushMessage(msg.speaker, msg.text);
+          if (msg.speaker === 'jarvis' && autoSpeakRef.current) {
+            speakText(msg.text);
+          }
           break;
         case 'status':
           setAssistantState(msg.state);
@@ -108,7 +172,7 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
           break;
       }
     },
-    [pushMessage],
+    [pushMessage, speakText],
   );
 
   const connectSocket = useCallback(
@@ -126,8 +190,6 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
   const reconnect = useCallback(async () => {
     const cfg = await loadConnectionConfig();
     if (!cfg || !cfg.deviceToken) {
-      // Sem device_token persistente (ex: último login foi por PIN), não há
-      // re-login automático possível — o utilizador tem de emparelhar de novo.
       setPaired(false);
       setStatus('disconnected');
       return;
@@ -141,11 +203,10 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
       setPaired(true);
       connectSocket(cfg.host, cfg.port, session);
     } else {
-      // Token revogado/expirado no PC — limpamos e pedimos novo emparelhamento.
       await clearConnectionConfig();
       setPaired(false);
       setStatus('error');
-      setError('Sessão expirada ou revogada. Emparelha novamente com o PC.');
+      setError('Sessao expirada ou revogada. Emparelha novamente com o PC.');
     }
   }, [connectSocket]);
 
@@ -154,6 +215,7 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
     return () => {
       socketRef.current?.close();
       liveAudioRef.current?.stop();
+      voice.stopSpeaking();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -163,20 +225,16 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       const trimmedPin = pin.trim().toUpperCase();
       if (!trimmedPin) {
-        setError('Introduz o código de emparelhamento.');
+        setError('Introduz o codigo de emparelhamento.');
         return false;
       }
       const res = await api.loginWithPin(h, p, trimmedPin);
       if (!res.ok || !res.token) {
-        setError(res.error ?? 'Código inválido ou expirado.');
+        setError(res.error ?? 'Codigo invalido ou expirado.');
         return false;
       }
       const session = api.sessionFromLogin(res.token, trimmedPin);
       sessionRef.current = session;
-      // Login por PIN é de sessão única: o servidor NÃO cria device_token aqui
-      // e o PIN é one-time-use. Por isso NÃO persistimos device_token — evita
-      // guardar um PIN usado como se fosse token e falhar no re-login.
-      // Persistimos apenas host/porta para reconectar; o re-login pede novo código.
       await clearConnectionConfig();
       await saveConnectionConfig({ host: h, port: p, deviceToken: '' });
       setHost(h);
@@ -193,19 +251,22 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       const trimmedKey = key.trim().toUpperCase();
       if (!trimmedKey) {
-        setError('Código QR inválido.');
+        setError('Codigo QR invalido.');
         return false;
       }
       const res = await api.autoLogin(h, p, trimmedKey);
       if (!res.ok || !res.token || !res.deviceToken) {
-        setError(res.error ?? 'Não foi possível emparelhar com o QR.');
+        setError(res.error ?? 'Nao foi possivel emparelhar com o QR.');
         return false;
       }
       const session: Session = { token: res.token, sessionKey: res.key };
       sessionRef.current = session;
-      // Aqui guardamos o device_token REAL devolvido por /auto-login — é o que
-      // permite re-login automático e persistente via /api/device-login.
-      await saveConnectionConfig({ host: h, port: p, deviceToken: res.deviceToken });
+      await clearConnectionConfig();
+      await saveConnectionConfig({
+        host: h,
+        port: p,
+        deviceToken: res.deviceToken,
+      });
       setHost(h);
       setPort(p);
       setPaired(true);
@@ -217,9 +278,12 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
 
   const disconnect = useCallback(async () => {
     socketRef.current?.close();
+    socketRef.current = null;
     liveAudioRef.current?.stop();
+    liveAudioRef.current = null;
     dictationStopRef.current?.();
     speakStopRef.current?.();
+    voice.stopSpeaking();
     sessionRef.current = null;
     setPaired(false);
     setStatus('disconnected');
@@ -234,24 +298,28 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
       pushMessage('user', trimmed);
       const socket = socketRef.current;
       const session = sessionRef.current;
-      const sentViaWs = socket?.sendCommand(trimmed) ?? false;
-      if (!sentViaWs) {
-        if (session && host && port) {
-          void api.sendCommand(host, port, session, trimmed);
-        } else {
-          setError('Sem ligação ao PC.');
-        }
+      const sent = socket?.sendCommand(trimmed);
+      if (!sent && session && host && port) {
+        void api.sendCommand(host, port, session, trimmed);
       }
     },
     [host, port, pushMessage],
   );
 
-  const clearMessages = useCallback(() => setMessages([]), []);
+  const clearMessages = useCallback(() => {
+    voice.stopSpeaking();
+    setVoiceMode((m) => (m === 'speaking' ? 'idle' : m));
+    setMessages([]);
+  }, []);
 
   const startDictation = useCallback(async () => {
+    if (!capabilities.dictation) {
+      setError(DICTATION_UNAVAILABLE_MESSAGE);
+      return;
+    }
     const ok = await voice.requestVoicePermissions();
     if (!ok) {
-      setError('Permissão de microfone/voz negada.');
+      setError('Permissao de microfone/voz negada.');
       return;
     }
     setVoiceMode('dictating');
@@ -290,7 +358,7 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
       },
     });
     dictationStopRef.current = handle.stop;
-  }, [sendText]);
+  }, [capabilities, sendText]);
 
   const stopDictation = useCallback(() => {
     dictationStopRef.current?.();
@@ -300,16 +368,18 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const startLiveAudio = useCallback(async () => {
-    const session = sessionRef.current;
-    if (!session || !host || !port) {
-      setError('Sem ligação ao PC.');
+    if (!capabilities.liveAudio) {
+      setError(LIVE_AUDIO_UNAVAILABLE_MESSAGE);
       return;
     }
-    // O módulo de captura não pede permissões sozinho (ver README do
-    // expo-audio-stream-pcm): pedir microfone antes de iniciar.
+    const session = sessionRef.current;
+    if (!session || !host || !port) {
+      setError('Sem ligacao ao PC.');
+      return;
+    }
     const micOk = await voice.requestVoicePermissions();
     if (!micOk) {
-      setError('Permissão de microfone negada. Ativa o microfone nas definições.');
+      setError('Permissao de microfone negada. Ativa o microfone nas definicoes.');
       return;
     }
     const service = new LiveAudioService();
@@ -317,14 +387,14 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
       if (s === 'live') setVoiceMode('live-audio');
       else if (s === 'error') {
         setVoiceMode('idle');
-        setError('Falha no áudio em tempo real.');
+        setError('Falha no audio em tempo real.');
       } else if (s === 'idle') {
         setVoiceMode((m) => (m === 'live-audio' ? 'idle' : m));
       }
     };
     liveAudioRef.current = service;
     await service.start(host, port, session);
-  }, [host, port]);
+  }, [capabilities, host, port]);
 
   const stopLiveAudio = useCallback(() => {
     liveAudioRef.current?.stop();
@@ -332,20 +402,52 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
     setVoiceMode('idle');
   }, []);
 
+  const uploadAndAnalyze = useCallback(async () => {
+    const session = sessionRef.current;
+    if (!session || !host || !port) {
+      setError('Sem ligacao ao PC para enviar imagem.');
+      return;
+    }
+    const res = await pickAndUploadImage(host, port, session.token);
+    if (res.ok) {
+      sendText("Analisa a imagem que acabei de enviar do meu telemovel.");
+    } else if (res.error) {
+      setError(res.error);
+    }
+  }, [host, port, sendText]);
+
   const speakLast = useCallback(() => {
     const lastJarvis = [...messages].reverse().find((m) => m.speaker === 'jarvis');
     if (!lastJarvis) return;
-    setVoiceMode('speaking');
-    const handle = voice.speak(lastJarvis.text, () => setVoiceMode('idle'));
-    speakStopRef.current = handle.stop;
-  }, [messages]);
+    speakText(lastJarvis.text);
+  }, [messages, speakText]);
 
-  const stopSpeaking = useCallback(() => {
-    speakStopRef.current?.();
-    speakStopRef.current = null;
-    voice.stopSpeaking();
-    setVoiceMode((m) => (m === 'speaking' ? 'idle' : m));
-  }, []);
+  const liveActivityAttrs = useMemo(
+    () => mapToJarvisLiveActivityAttributes({ status, assistantState, voiceMode }),
+    [status, assistantState, voiceMode],
+  );
+
+  useEffect(() => {
+    if (!capabilities.liveActivity) return;
+    if (!paired) {
+      void stopJarvisLiveActivity('immediate');
+      return;
+    }
+    void startJarvisLiveActivity(liveActivityAttrs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capabilities.liveActivity, paired]);
+
+  useEffect(() => {
+    if (!capabilities.liveActivity || !paired) return;
+    void updateJarvisLiveActivityAttributes(liveActivityAttrs);
+  }, [capabilities.liveActivity, paired, liveActivityAttrs]);
+
+  useEffect(
+    () => () => {
+      void stopJarvisLiveActivity('immediate');
+    },
+    [],
+  );
 
   const value = useMemo<JarvisContextValue>(
     () => ({
@@ -356,6 +458,7 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
       port,
       paired,
       error,
+      capabilities,
       pairWithPin,
       pairWithQr,
       reconnect,
@@ -363,22 +466,25 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
       sendText,
       clearMessages,
       voiceMode,
+      autoSpeak,
+      toggleAutoSpeak,
       startDictation,
       stopDictation,
       startLiveAudio,
       stopLiveAudio,
       speakLast,
+      speakText,
+      uploadAndAnalyze,
       stopSpeaking,
     }),
     [
-      status, assistantState, messages, host, port, paired, error,
+      status, assistantState, messages, host, port, paired, error, capabilities,
       pairWithPin, pairWithQr, reconnect, disconnect, sendText, clearMessages,
-      voiceMode, startDictation, stopDictation, startLiveAudio,
-      stopLiveAudio, speakLast, stopSpeaking,
+      voiceMode, autoSpeak, toggleAutoSpeak, startDictation, stopDictation,
+      startLiveAudio, stopLiveAudio, speakLast, speakText,
+      uploadAndAnalyze, stopSpeaking,
     ],
   );
 
   return <JarvisContext.Provider value={value}>{children}</JarvisContext.Provider>;
 }
-
-

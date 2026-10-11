@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+﻿import { useRouter } from 'expo-router';
 import { useRef, useEffect } from 'react';
 import {
   View,
@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useJarvis } from '@/state/JarvisContext';
@@ -25,40 +24,68 @@ export default function HomeScreen() {
     paired,
     error,
     voiceMode,
+    autoSpeak,
+    toggleAutoSpeak,
     sendText,
     clearMessages,
-    startDictation,
-    stopDictation,
-    startLiveAudio,
-    stopLiveAudio,
-    speakLast,
     stopSpeaking,
-    disconnect,
+    speakText,
+    uploadAndAnalyze,
   } = useJarvis();
 
   const listRef = useRef<FlatList>(null);
+
   useEffect(() => {
     if (messages.length > 0) {
-      listRef.current?.scrollToEnd({ animated: true });
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     }
   }, [messages.length]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Cabeçalho */}
+      {/* Header */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.brandWrap}>
           <Text style={styles.title}>JARVIS</Text>
           <ConnectionPill status={status} />
         </View>
+
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/fitness')} style={styles.iconBtn}>
-            <Text style={styles.iconText}>🏃</Text>
+          {/* Voice Toggle */}
+          <TouchableOpacity
+            onPress={toggleAutoSpeak}
+            style={[styles.iconBtn, autoSpeak && styles.iconBtnActive]}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.iconText}>{autoSpeak ? '🔊' : '🔇'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={clearMessages} style={styles.iconBtn}>
-            <Text style={styles.iconText}>🧹</Text>
+
+          {/* Fitness */}
+          <TouchableOpacity
+            onPress={() => router.push('/fitness')}
+            style={styles.iconBtn}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.iconText}>⚡</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/settings')} style={styles.iconBtn}>
+
+          {/* Clear */}
+          <TouchableOpacity
+            onPress={clearMessages}
+            style={styles.iconBtn}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.iconText}>🗑️</Text>
+          </TouchableOpacity>
+
+          {/* Settings */}
+          <TouchableOpacity
+            onPress={() => router.push('/settings')}
+            style={styles.iconBtn}
+            activeOpacity={0.7}
+          >
             <Text style={styles.iconText}>⚙️</Text>
           </TouchableOpacity>
         </View>
@@ -66,45 +93,51 @@ export default function HomeScreen() {
 
       {!paired ? (
         <View style={styles.center}>
-          <Text style={styles.notPaired}>Sem emparelhar.</Text>
-          <Text style={styles.notPairedSub}>
-            Liga o JARVIS ao teu PC para começar.
-          </Text>
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={() => router.push('/pair')}
-          >
-            <Text style={styles.primaryBtnText}>Emparelhar agora</Text>
-          </TouchableOpacity>
+          <View style={styles.unpairedCard}>
+            <View style={styles.unpairedRing}>
+              <Text style={styles.unpairedIcon}>🌐</Text>
+            </View>
+            <Text style={styles.notPaired}>JARVIS NEURAL LINK</Text>
+            <Text style={styles.notPairedSub}>
+              Liga o teu iPhone ao PC para ativar a inteligência artificial, voz e controlo remoto.
+            </Text>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={() => router.push('/pair')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.primaryBtnText}>Emparelhar agora</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : (
         <>
-          {/* Orb + conversa */}
+          {/* Dynamic Island In-App HUD */}
           <AssistantOrb state={assistantState} mode={voiceMode} />
+
+          {/* Conversation List */}
           <FlatList
             ref={listRef}
             data={messages}
             keyExtractor={(m) => m.id}
-            renderItem={({ item }) => <MessageBubble message={item} />}
+            renderItem={({ item }) => (
+              <MessageBubble message={item} onSpeak={speakText} />
+            )}
             style={styles.list}
-            contentContainerStyle={{ paddingVertical: 8 }}
+            contentContainerStyle={styles.listContent}
           />
 
           {error ? (
-            <TouchableOpacity style={styles.errorBar} onPress={() => {}}>
+            <View style={styles.errorBar}>
               <Text style={styles.errorText}>{error}</Text>
-            </TouchableOpacity>
+            </View>
           ) : null}
 
+          {/* Modern Composer */}
           <Composer
             onSend={sendText}
-            onMicPress={() => (voiceMode === 'dictating' ? stopDictation() : startDictation())}
-            onLivePress={() => (voiceMode === 'live-audio' ? stopLiveAudio() : startLiveAudio())}
-            onSpeakPress={speakLast}
+            onCameraPress={uploadAndAnalyze}
             onStopPress={stopSpeaking}
-            busy={assistantState === 'processing'}
-            micActive={voiceMode === 'dictating'}
-            liveActive={voiceMode === 'live-audio'}
             speaking={voiceMode === 'speaking'}
             disabled={status !== 'connected'}
           />
@@ -115,54 +148,134 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.bg },
+  safe: {
+    flex: 1,
+    backgroundColor: '#050811',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingTop: 4,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#0f172a',
+  },
+  brandWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   title: {
-    color: theme.colors.primary,
+    color: '#22d3ee',
     fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: 2,
+    fontWeight: '900',
+    letterSpacing: 2.5,
+    fontFamily: theme.font.mono,
   },
-  headerActions: { flexDirection: 'row', gap: 6 },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: theme.colors.surfaceAlt,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#0e1726',
+    borderWidth: 1,
+    borderColor: '#1e293b',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconText: { fontSize: 18 },
-  list: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  notPaired: { color: theme.colors.text, fontSize: 20, fontWeight: '700' },
-  notPairedSub: {
-    color: theme.colors.textDim,
-    fontSize: 14,
-    marginTop: 8,
+  iconBtnActive: {
+    borderColor: '#22d3ee',
+    backgroundColor: '#083344',
+  },
+  iconText: {
+    fontSize: 16,
+  },
+  list: {
+    flex: 1,
+  },
+  listContent: {
+    paddingVertical: 12,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  unpairedCard: {
+    backgroundColor: '#0c1322',
+    borderWidth: 1.5,
+    borderColor: '#1e293b',
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+  },
+  unpairedRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#082f49',
+    borderWidth: 1.5,
+    borderColor: '#22d3ee',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  unpairedIcon: {
+    fontSize: 28,
+  },
+  notPaired: {
+    color: '#f8fafc',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    fontFamily: theme.font.mono,
     textAlign: 'center',
   },
+  notPairedSub: {
+    color: '#64748b',
+    fontSize: 13,
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   primaryBtn: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.radius.pill,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    marginTop: 20,
+    backgroundColor: '#22d3ee',
+    borderRadius: 20,
+    paddingHorizontal: 28,
+    paddingVertical: 13,
+    marginTop: 22,
+    shadowColor: '#22d3ee',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
   },
-  primaryBtnText: { color: theme.colors.bg, fontWeight: '700', fontSize: 16 },
+  primaryBtnText: {
+    color: '#070b13',
+    fontWeight: '800',
+    fontSize: 15,
+    letterSpacing: 0.5,
+  },
   errorBar: {
-    marginHorizontal: 12,
-    marginBottom: 6,
+    marginHorizontal: 14,
+    marginBottom: 8,
     padding: 10,
-    backgroundColor: '#2a1414',
-    borderRadius: theme.radius.sm,
+    backgroundColor: '#2b0f16',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#f43f5e44',
   },
-  errorText: { color: theme.colors.danger, fontSize: 13, textAlign: 'center' },
+  errorText: {
+    color: '#fb7185',
+    fontSize: 12,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
 });

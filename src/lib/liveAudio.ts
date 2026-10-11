@@ -1,6 +1,26 @@
-import ExpoAudioStream from 'expo-audio-stream-pcm';
 import type { EventSubscription } from 'expo-modules-core';
 import type { Session } from './types';
+
+// `expo-audio-stream-pcm` também faz requireNativeModule() no topo do módulo e
+// rebenta no Expo Go ao ser importado. Require guardado + flags de
+// disponibilidade para a app arrancar com honestidade (ver JarvisContext).
+let ExpoAudioStream: typeof import('expo-audio-stream-pcm').default | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const mod = require('expo-audio-stream-pcm');
+  ExpoAudioStream = mod?.default ?? mod ?? null;
+} catch {
+  ExpoAudioStream = null;
+}
+
+/** `true` quando o módulo nativo de captura de áudio está presente. */
+export function isLiveAudioAvailable(): boolean {
+  return ExpoAudioStream != null;
+}
+
+/** Motivo honesto mostrado ao utilizador quando o áudio ao vivo não existe. */
+export const LIVE_AUDIO_UNAVAILABLE_MESSAGE =
+  'Voz ao vivo indisponível na Expo Go (áudio em tempo real nativo não incluído). Usa o texto — disponível em builds nativas.';
 
 /**
  * Áudio em tempo real do microfone do iPhone → Gemini Live, via
@@ -51,6 +71,13 @@ export class LiveAudioService {
 
   /** Inicia captura de áudio e ligação WS binária. */
   async start(host: string, port: number, session: Session): Promise<void> {
+    const audio = ExpoAudioStream;
+    if (!audio) {
+      // Sem módulo nativo (Expo Go) — sinaliza erro; o JarvisContext mostra
+      // LIVE_AUDIO_UNAVAILABLE_MESSAGE antes de chegar aqui.
+      this.setState('error');
+      return;
+    }
     if (!session || this.state === 'live' || this.state === 'connecting') return;
     this.host = host;
     this.port = port;
@@ -59,18 +86,18 @@ export class LiveAudioService {
     this.setState('connecting');
 
     const ws = new WebSocket(
-      `wss://${host}:${port}/ws/phone-audio?token=${encodeURIComponent(session.token)}`,
+      `ws://${host}:${port}/ws/phone-audio?token=${encodeURIComponent(session.token)}`,
     );
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
 
     ws.onopen = () => {
       // Subscreve os chunks PCM e só depois inicia a captura nativa.
-      this.sub = ExpoAudioStream.addListener('onAudioData', (event) => {
+      this.sub = audio.addListener('onAudioData', (event) => {
         this.onAudioData(event.data);
       });
       try {
-        ExpoAudioStream.start({
+        audio.start({
           sampleRate: TARGET_SAMPLE_RATE,
           channels: 1,
           bitDepth: 16,
@@ -126,7 +153,7 @@ export class LiveAudioService {
       /* ignora */
     }
     try {
-      ExpoAudioStream.stop();
+      ExpoAudioStream?.stop();
     } catch {
       /* ignora */
     }

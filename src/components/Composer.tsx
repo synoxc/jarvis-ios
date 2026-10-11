@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,32 +6,38 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { theme } from '@/theme';
 
-/** Barra de entrada de texto + botões de voz. */
+const QUICK_ACTIONS = [
+  'Que horas são?',
+  'Como está o tempo?',
+  'Conta uma piada',
+  'Abre o bloco de notas',
+  'Quem és tu?',
+];
+
 export function Composer({
   onSend,
-  onMicPress,
-  onLivePress,
-  onSpeakPress,
+  onCameraPress,
   onStopPress,
-  busy,
-  micActive,
-  liveActive,
   speaking,
   disabled,
 }: {
   onSend: (text: string) => void;
-  onMicPress: () => void;
-  onLivePress: () => void;
-  onSpeakPress: () => void;
+  onCameraPress?: () => void;
+  onMicPress?: () => void;
+  onLivePress?: () => void;
+  onSpeakPress?: () => void;
   onStopPress: () => void;
-  busy: boolean;
-  micActive: boolean;
-  liveActive: boolean;
+  busy?: boolean;
+  micActive?: boolean;
+  liveActive?: boolean;
   speaking: boolean;
   disabled: boolean;
+  dictationAvailable?: boolean;
+  liveAudioAvailable?: boolean;
 }) {
   const [text, setText] = useState('');
 
@@ -42,123 +48,181 @@ export function Composer({
     setText('');
   };
 
+  const handleChip = (prompt: string) => {
+    if (disabled) return;
+    onSend(prompt);
+  };
+
   return (
     <View style={styles.wrap}>
+      {/* Quick Action Chips */}
+      {!disabled && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipScroll}
+        >
+          {QUICK_ACTIONS.map((prompt) => (
+            <TouchableOpacity
+              key={prompt}
+              style={styles.chip}
+              onPress={() => handleChip(prompt)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.chipText}>{prompt}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* Input Row */}
       <View style={styles.inputRow}>
+        {onCameraPress && !disabled ? (
+          <TouchableOpacity
+            style={styles.camBtn}
+            onPress={onCameraPress}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.camIcon}>📸</Text>
+          </TouchableOpacity>
+        ) : null}
         <TextInput
           style={styles.input}
-          placeholder={disabled ? 'Sem ligação ao PC…' : 'Escreve ao JARVIS…'}
-          placeholderTextColor={theme.colors.textDim}
+          placeholder={disabled ? 'Sem ligação ao PC...' : 'Mensagem ao JARVIS (ou usa mic do teclado)...'}
+          placeholderTextColor="#475569"
           value={text}
           onChangeText={setText}
           onSubmitEditing={submit}
           returnKeyType="send"
           editable={!disabled}
         />
-        <TouchableOpacity
-          style={[styles.btn, styles.sendBtn, disabled && styles.btnDisabled]}
-          onPress={submit}
-          disabled={disabled || !text.trim()}
-        >
-          <Text style={styles.btnText}>➤</Text>
-        </TouchableOpacity>
+
+        {speaking ? (
+          <TouchableOpacity
+            style={[styles.btn, styles.stopBtn]}
+            onPress={onStopPress}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.stopBtnText}>PARAR</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.btn, styles.sendBtn, (!text.trim() || disabled) && styles.btnDisabled]}
+            onPress={submit}
+            disabled={disabled || !text.trim()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.sendIcon}>➤</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      <View style={styles.actionRow}>
-        <ActionBtn
-          label={micActive ? 'Parar ditado' : 'Ditado'}
-          icon={micActive ? '⏹' : '🎙️'}
-          active={micActive}
-          onPress={onMicPress}
-          disabled={disabled}
-        />
-        <ActionBtn
-          label={liveActive ? 'Parar vivo' : 'Voz ao vivo'}
-          icon={liveActive ? '⏹' : '🎤'}
-          active={liveActive}
-          onPress={onLivePress}
-          disabled={disabled}
-        />
-        <ActionBtn
-          label={speaking ? 'Parar' : 'Ouvir'}
-          icon={speaking ? '⏹' : '🔊'}
-          active={speaking}
-          onPress={speaking ? onStopPress : onSpeakPress}
-          disabled={disabled}
-        />
-        {busy ? <ActivityIndicator color={theme.colors.primary} style={{ marginLeft: 'auto' }} /> : null}
+      {/* Mic Hint */}
+      <View style={styles.hintRow}>
+        <Text style={styles.hintText}>
+          Dica: toca no microfone do teclado do iPhone para ditar em voz alta
+        </Text>
       </View>
     </View>
-  );
-}
-
-function ActionBtn({
-  label,
-  icon,
-  active,
-  onPress,
-  disabled,
-}: {
-  label: string;
-  icon: string;
-  active: boolean;
-  onPress: () => void;
-  disabled: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.actionBtn, active && styles.actionBtnActive, disabled && styles.btnDisabled]}
-      onPress={onPress}
-      disabled={disabled}
-    >
-      <Text style={styles.actionIcon}>{icon}</Text>
-      <Text style={[styles.actionLabel, active && { color: theme.colors.primary }]}>{label}</Text>
-    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
     borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-    paddingHorizontal: 10,
+    borderTopColor: '#1e293b',
+    backgroundColor: '#070b13',
+    paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: 10,
+    paddingBottom: 8,
   },
-  inputRow: { flexDirection: 'row', alignItems: 'center' },
+  chipScroll: {
+    paddingBottom: 8,
+    gap: 8,
+  },
+  chip: {
+    backgroundColor: '#0f172a',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  chipText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   input: {
     flex: 1,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: 14,
+    backgroundColor: '#0f172a',
+    borderRadius: 22,
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    color: theme.colors.text,
+    color: '#f8fafc',
     fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  camBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  camIcon: {
+    fontSize: 18,
   },
   btn: {
-    width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 8,
   },
-  sendBtn: { backgroundColor: theme.colors.primary },
-  btnDisabled: { opacity: 0.4 },
-  btnText: { color: theme.colors.bg, fontSize: 18, fontWeight: '700' },
-  actionRow: { flexDirection: 'row', marginTop: 8, gap: 8 },
-  actionBtn: {
-    flexDirection: 'row',
+  sendBtn: {
+    width: 44,
+    backgroundColor: '#22d3ee',
+    shadowColor: '#22d3ee',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+  },
+  stopBtn: {
+    paddingHorizontal: 14,
+    backgroundColor: '#f43f5e',
+  },
+  stopBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  sendIcon: {
+    color: '#070b13',
+    fontSize: 17,
+    fontWeight: '900',
+    marginLeft: 2,
+  },
+  btnDisabled: {
+    backgroundColor: '#1e293b',
+    shadowOpacity: 0,
+  },
+  hintRow: {
+    marginTop: 6,
     alignItems: 'center',
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: theme.radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
   },
-  actionBtnActive: { borderColor: theme.colors.primary },
-  actionIcon: { fontSize: 16, marginRight: 6 },
-  actionLabel: { color: theme.colors.textDim, fontSize: 13, fontWeight: '600' },
+  hintText: {
+    color: '#475569',
+    fontSize: 11,
+    fontStyle: 'italic',
+  },
 });

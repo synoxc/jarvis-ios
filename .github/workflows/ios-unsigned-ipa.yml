@@ -1,0 +1,112 @@
+# Gera um .ipa iOS NÃO ASSINADO num runner macOS (GitHub Actions)
+# para depois assinares no Windows com Sideloadly/AltStore + Apple ID grátis.
+#
+# Como usar:
+#   1. git add . && git commit && git push para o GitHub
+#      (o prebuild corre no runner macOS — no Windows o Expo
+#      recusa gerar a pasta ios/)
+#   2. separador Actions > "iOS unsigned IPA" > Run workflow
+#   4. sacar o artefacto jarvis-ios-unsigned.ipa
+#   5. no Windows: Sideloadly ou AltStore > instalar com o teu Apple ID
+#   6. renovar de 7 em 7 dias (AltStore faz sozinha no mesmo Wi-Fi)
+#
+# Limites reais da conta Apple GRÁTIS:
+#   - a app expira ao fim de 7 dias, máximo 3 apps sideloaded
+#   - entitlements pagos (HealthKit, App Groups, Push, widgets com
+#     extensions) SÃO REMOVIDOS antes de compilar — ver passo
+#     "strip-paid-entitlements". Sem isto o xcodebuild falha ou o
+#     Sideloadly rejeita. Consequência: ecrã Fitness/Health fica
+#     degradado nesta build; microfone, Face ID, câmara QR e áudio
+#     em background funcionam.
+name: iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Expo prebuild (gera/atualiza ios/)
+        run: npx expo prebuild --platform ios --non-interactive
+
+      - name: Setup Ruby + CocoaPods
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Pod install
+        working-directory: ios
+        run: pod install --repo-update
+
+      # Conta Apple GRÁTIS não assina estes entitlements. Removê-los
+      # evita falha de compilação e rejeição no Sideloadly/AltStore.
+      - name: Strip paid entitlements (HealthKit/App Groups/Push/widgets)
+        run: |
+          python3 - <<'EOF'
+          import glob, re
+          paid = [
+              'com.apple.developer.healthkit',
+              'com.apple.developer.healthkit.access',
+              'com.apple.developer.healthkit.background-delivery',
+              'com.apple.security.application-groups',
+              'aps-environment',
+          ]
+          for f in glob.glob('ios/**/*.entitlements', recursive=True):
+              src = open(f).read()
+              for key in paid:
+                  # remove a linha <key>...</key> e o valor seguinte (<true/>, <array>, <string>)
+                  src = re.sub(
+                      r'\s*<key>' + re.escape(key) + r'</key>\s*(<true\s*/>|<false\s*/>|<string>.*?</string>|<array>.*?</array>)',
+                      '',
+                      src,
+                      flags=re.DOTALL,
+                  )
+              open(f, 'w').write(src)
+              print('stripped:', f)
+          EOF
+
+      - name: Build .app sem assinatura
+        working-directory: ios
+        run: |
+          WS=$(ls -d *.xcworkspace | head -n 1)
+          SCHEME=$(basename "$WS" .xcworkspace)
+          xcodebuild \
+            -workspace "$WS" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
+
+      - name: Empacotar .ipa (Payload/)
+        run: |
+          APP=$(find ios/build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          echo "APP=$APP"
+          rm -rf Payload jarvis-ios-unsigned.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+          zip -r jarvis-ios-unsigned.ipa Payload
+
+      - name: Upload artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-ios-unsigned
+          path: jarvis-ios-unsigned.ipa

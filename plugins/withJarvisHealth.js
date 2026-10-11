@@ -10,16 +10,23 @@
 // A lógica de leitura de passos/distância/treinos está em
 // ios/JarvisHealth/JarvisHealth.swift e é exposta via TurboModule.
 
-const { withInfoPlist, withEntitlementsPlist } = require('@expo/config-plugins');
+const { withInfoPlist, withEntitlementsPlist } = require('expo/config-plugins');
 
 const withJarvisHealth = (config) => {
   // 1. Descrições de privacidade no Info.plist.
+  // NOTE: com o config-plugins, o callback do withInfoPlist revela
+  // cfg.ios.infoPlist já carregado a partir do app.json; modifica-lo
+  // diretamente (e não modResults, que ainda não é criado nesse
+  // callback) garante que o build consegue injectar as chaves.
   config = withInfoPlist(config, (cfg) => {
-    cfg.ios.modResults.NSHealthShareUsageDescription =
-      cfg.ios.modResults.NSHealthShareUsageDescription ??
+    if (!cfg.ios || !cfg.ios.infoPlist) {
+      return cfg;
+    }
+    cfg.ios.infoPlist.NSHealthShareUsageDescription =
+      cfg.ios.infoPlist.NSHealthShareUsageDescription ??
       'O JARVIS pode ler os teus dados de atividade física (passos, treinos) se autorizares.';
-    cfg.ios.modResults.NSHealthUpdateUsageDescription =
-      cfg.ios.modResults.NSHealthUpdateUsageDescription ??
+    cfg.ios.infoPlist.NSHealthUpdateUsageDescription =
+      cfg.ios.infoPlist.NSHealthUpdateUsageDescription ??
       'O JARVIS não escreve dados de saúde.';
     return cfg;
   });

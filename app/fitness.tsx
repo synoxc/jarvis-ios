@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '@/theme';
@@ -14,18 +15,13 @@ import {
   readToday,
   type HealthSnapshot,
 } from '@/lib/health';
+import { useJarvis } from '@/state/JarvisContext';
 
-/**
- * Ecrã de Fitness (HealthKit).
- *
- * LIMITAÇÃO HONESTA: só funciona num development build com iPhone físico.
- * Em Expo Go / simulador, mostra o aviso de indisponibilidade em vez de dados
- * fictícios. Nunca inventa valores.
- */
 export default function FitnessScreen() {
   const [authorized, setAuthorized] = useState(false);
   const [data, setData] = useState<HealthSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
+  const { sendText } = useJarvis();
 
   useEffect(() => {
     setAuthorized(isAvailable());
@@ -41,123 +37,180 @@ export default function FitnessScreen() {
     setLoading(false);
   };
 
-  if (!authorized) {
-    return (
-      <SafeAreaView style={styles.safe} edges={['bottom']}>
-        <View style={styles.center}>
-          <Text style={styles.title}>Fitness</Text>
-          {isAvailable() ? (
-            <>
-              <Text style={styles.sub}>
-                Autoriza o acesso aos teus dados de atividade para o JARVIS os
-                poder consultar.
-              </Text>
+  const sendToJarvis = () => {
+    if (!data) return;
+    const km = (data.distanceMeters / 1000).toFixed(2);
+    const kcal = Math.round(data.activeEnergyKcal);
+    const msg = `[Apple Fitness] Resumo do meu dia: dei ${data.steps.toLocaleString('pt-PT')} passos, percorri ${km} km e queimei ${kcal} kcal em atividade física. Dá-me a tua análise e conselho de saúde, Jarvis.`;
+    sendText(msg);
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>APPLE FITNESS</Text>
+          <Text style={styles.sub}>
+            Monitorização de saúde e atividade física sincronizada com o JARVIS.
+          </Text>
+        </View>
+
+        {!authorized ? (
+          <View style={styles.cardBox}>
+            <Text style={styles.cardTitle}>Acesso ao HealthKit</Text>
+            <Text style={styles.cardDesc}>
+              {isAvailable()
+                ? 'Autoriza o acesso aos teus dados de atividade para o JARVIS te dar relatórios e conselhos de treino.'
+                : 'O HealthKit real da Apple requer compilação nativa. Podes testar o envio de dados simulados para o JARVIS avaliar.'}
+            </Text>
+
+            {isAvailable() ? (
               <TouchableOpacity
                 style={[styles.btn, loading && { opacity: 0.6 }]}
                 onPress={load}
                 disabled={loading}
               >
                 {loading ? (
-                  <ActivityIndicator color={theme.colors.bg} />
+                  <ActivityIndicator color="#070b13" />
                 ) : (
-                  <Text style={styles.btnText}>Autorizar e ver dados</Text>
+                  <Text style={styles.btnText}>Autorizar Saúde</Text>
                 )}
               </TouchableOpacity>
-            </>
-          ) : (
-            <Text style={styles.warn}>
-              HealthKit indisponível. Esta funcionalidade requer um development
-              build instalado num iPhone físico (não funciona em Expo Go nem no
-              simulador). Consulta o README, secção "Fitness / HealthKit".
-            </Text>
-          )}
-        </View>
-      </SafeAreaView>
-    );
-  }
+            ) : (
+              <TouchableOpacity
+                style={styles.demoBtn}
+                onPress={() => {
+                  setData({
+                    steps: 8420,
+                    distanceMeters: 6150,
+                    activeEnergyKcal: 480,
+                    workoutsLastWeek: 3,
+                  });
+                  setAuthorized(true);
+                }}
+              >
+                <Text style={styles.demoBtnText}>Carregar Demonstração</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <>
+            <View style={styles.grid}>
+              <Stat label="Passos Hoje" value={data ? data.steps.toLocaleString('pt-PT') : '0'} icon="👟" />
+              <Stat
+                label="Distância"
+                value={data ? `${(data.distanceMeters / 1000).toFixed(2)} km` : '0 km'}
+                icon="📍"
+              />
+              <Stat
+                label="Calorias Ativas"
+                value={data ? `${Math.round(data.activeEnergyKcal)} kcal` : '0 kcal'}
+                icon="🔥"
+              />
+              <Stat
+                label="Treinos (7 dias)"
+                value={data ? String(data.workoutsLastWeek) : '0'}
+                icon="🏋️"
+              />
+            </View>
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <View style={styles.container}>
-        <Text style={styles.title}>Atividade de hoje</Text>
-        <View style={styles.grid}>
-          <Stat label="Passos" value={data ? formatNumber(data.steps) : '—'} icon="👟" />
-          <Stat
-            label="Distância"
-            value={data ? `${(data.distanceMeters / 1000).toFixed(2)} km` : '—'}
-            icon="📍"
-          />
-          <Stat
-            label="Energia activa"
-            value={data ? `${Math.round(data.activeEnergyKcal)} kcal` : '—'}
-            icon="🔥"
-          />
-          <Stat
-            label="Treinos (7 dias)"
-            value={data ? String(data.workoutsLastWeek) : '—'}
-            icon="🏋️"
-          />
-        </View>
-        <TouchableOpacity style={[styles.btn, loading && { opacity: 0.6 }]} onPress={load} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color={theme.colors.bg} />
-          ) : (
-            <Text style={styles.btnText}>Atualizar</Text>
-          )}
-        </TouchableOpacity>
-        <Text style={styles.privacy}>
-          Os dados são lidos do teu iPhone e nunca enviados para o PC sem
-          autorização explícita.
-        </Text>
-      </View>
+            <TouchableOpacity style={styles.actionBtn} onPress={sendToJarvis}>
+              <Text style={styles.actionBtnText}>Pedir Análise ao JARVIS</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.refreshBtn}
+              onPress={load}
+              disabled={loading}
+            >
+              <Text style={styles.refreshBtnText}>Atualizar Dados</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 function Stat({ label, value, icon }: { label: string; value: string; icon: string }) {
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardIcon}>{icon}</Text>
-      <Text style={styles.cardValue}>{value}</Text>
-      <Text style={styles.cardLabel}>{label}</Text>
+    <View style={styles.statCard}>
+      <Text style={styles.statIcon}>{icon}</Text>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
-function formatNumber(n: number): string {
-  return Math.round(n).toLocaleString('pt-PT');
-}
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.bg },
-  container: { padding: 16 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  title: { color: theme.colors.text, fontSize: 22, fontWeight: '700', marginBottom: 8 },
-  sub: { color: theme.colors.textDim, fontSize: 14, textAlign: 'center', marginBottom: 20, lineHeight: 20 },
-  warn: {
-    color: theme.colors.warning,
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
+  safe: { flex: 1, backgroundColor: '#050811' },
+  container: { padding: 18 },
+  header: { marginBottom: 20 },
+  title: {
+    color: '#22d3ee',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 2,
+    fontFamily: theme.font.mono,
   },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 12 },
-  card: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.md,
-    padding: 16,
-    width: '47%',
+  sub: { color: '#64748b', fontSize: 13, marginTop: 4, lineHeight: 18 },
+  cardBox: {
+    backgroundColor: '#0c1322',
+    borderWidth: 1.5,
+    borderColor: '#1e293b',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  cardTitle: { color: '#f8fafc', fontSize: 17, fontWeight: '700', marginBottom: 8 },
+  cardDesc: { color: '#94a3b8', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  btn: {
+    backgroundColor: '#22d3ee',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     alignItems: 'center',
   },
-  cardIcon: { fontSize: 28 },
-  cardValue: { color: theme.colors.primary, fontSize: 20, fontWeight: '700', marginTop: 6 },
-  cardLabel: { color: theme.colors.textDim, fontSize: 12, marginTop: 2 },
-  btn: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.radius.pill,
+  btnText: { color: '#070b13', fontWeight: '800', fontSize: 15 },
+  demoBtn: {
+    backgroundColor: '#083344',
+    borderWidth: 1,
+    borderColor: '#22d3ee',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  demoBtnText: { color: '#22d3ee', fontWeight: '700', fontSize: 14 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  statCard: {
+    backgroundColor: '#0c1322',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    padding: 16,
+    width: '48%',
+    alignItems: 'center',
+  },
+  statIcon: { fontSize: 26 },
+  statValue: { color: '#22d3ee', fontSize: 19, fontWeight: '800', marginTop: 8 },
+  statLabel: { color: '#64748b', fontSize: 11, fontWeight: '600', marginTop: 4 },
+  actionBtn: {
+    backgroundColor: '#22d3ee',
+    borderRadius: 18,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 20,
   },
-  btnText: { color: theme.colors.bg, fontWeight: '700', fontSize: 16 },
-  privacy: { color: theme.colors.textDim, fontSize: 12, marginTop: 16, textAlign: 'center', lineHeight: 18 },
+  actionBtnText: { color: '#070b13', fontWeight: '800', fontSize: 15 },
+  refreshBtn: {
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 18,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  refreshBtnText: { color: '#94a3b8', fontWeight: '600', fontSize: 14 },
 });
