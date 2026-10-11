@@ -20,7 +20,7 @@
 #     em background funcionam.
 name: iOS unsigned IPA
 
-on:
+"on":
   workflow_dispatch:
 
 jobs:
