@@ -9,8 +9,9 @@ expo-env.d.ts
 
 # Prebuild nativo: gerado no runner macOS (npx expo prebuild).
 # No Windows o Expo recusa gerar ios/, por isso NÃO vai para o git.
-ios/
-android/
+# (ancorado à raiz para não apanhar modules/*/ios/)
+/ios/
+/android/
 
 # Native
 *.jks
