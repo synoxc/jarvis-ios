@@ -25,32 +25,40 @@ name: iOS unsigned IPA
 
 jobs:
   build:
-    runs-on: macos-15
+    # Expo SDK 57 (expo-modules-jsi 57.1.x) SÓ compila com Swift 6.3+,
+    # ou seja Xcode >= 26.4 (expo/expo#49214): em Xcode 26.2/26.3 o
+    # RuntimeScheduler.h dá "SWIFT_RETURNS_RETAINED ... cannot be annotated"
+    # (hard error) e o JavaScriptRuntime.swift dá "sending 'resultPtr' risks
+    # data races". A imagem macos-15 só vai até Xcode 26.3; a macos-26 traz
+    # 26.6 (default) / 26.5 / 26.4.1. Xcode >= 26.4 também satisfaz o
+    # swift-tools-version 6.2 do SPM local expo-modules-jsi/apple (o default
+    # do macos-15, Xcode 16.4 = Swift 6.1, nem sequer resolvia o pacote).
+    runs-on: macos-26
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # O SwiftPM local expo-modules-jsi/apple declara
-      # swift-tools-version 6.2 (Swift 6.2). O Xcode DEFAULT do runner é o
-      # 16.4 (Swift 6.1) e o build morria com:
-      #   "package 'apple' is using Swift tools version 6.2.0 but the
-      #    installed version is 6.1.0"
-      # O macos-15 traz Xcode 26.x pré-instalado (/Applications/Xcode_26*.app)
-      # — basta selecioná-lo antes do pod install / xcodebuild.
-      - name: Selecionar Xcode 26 (Swift 6.2)
+      - name: Selecionar Xcode 26.4+ (Swift 6.3, Expo SDK 57)
         run: |
           set -euo pipefail
           echo "Xcodes disponíveis:"
           ls -d /Applications/Xcode*.app || true
           XCODE=$( (ls -d /Applications/Xcode_26*.app 2>/dev/null || true) | sort | tail -n 1 )
           if [ -z "$XCODE" ] || [ ! -d "$XCODE" ]; then
-            echo "::error::Nenhum Xcode 26.x encontrado no runner (necessário para swift-tools-version 6.2)."
+            echo "::error::Nenhum Xcode 26.x encontrado no runner."
             exit 1
           fi
-          echo "Selecionado: $XCODE"
           sudo xcode-select -s "$XCODE"
+          echo "Selecionado: $XCODE"
           xcodebuild -version
           swift --version
+          VER=$(xcodebuild -version | awk '/^Xcode/{print $2}')
+          case "$VER" in
+            26.0*|26.1*|26.2*|26.3*)
+              echo "::error::Xcode $VER < 26.4 — Expo SDK 57 exige Swift 6.3 (expo/expo#49214)."
+              exit 1
+              ;;
+          esac
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
