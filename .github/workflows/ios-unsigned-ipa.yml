@@ -30,6 +30,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # O SwiftPM local expo-modules-jsi/apple declara
+      # swift-tools-version 6.2 (Swift 6.2). O Xcode DEFAULT do runner é o
+      # 16.4 (Swift 6.1) e o build morria com:
+      #   "package 'apple' is using Swift tools version 6.2.0 but the
+      #    installed version is 6.1.0"
+      # O macos-15 traz Xcode 26.x pré-instalado (/Applications/Xcode_26*.app)
+      # — basta selecioná-lo antes do pod install / xcodebuild.
+      - name: Selecionar Xcode 26 (Swift 6.2)
+        run: |
+          set -euo pipefail
+          echo "Xcodes disponíveis:"
+          ls -d /Applications/Xcode*.app || true
+          XCODE=$( (ls -d /Applications/Xcode_26*.app 2>/dev/null || true) | sort | tail -n 1 )
+          if [ -z "$XCODE" ] || [ ! -d "$XCODE" ]; then
+            echo "::error::Nenhum Xcode 26.x encontrado no runner (necessário para swift-tools-version 6.2)."
+            exit 1
+          fi
+          echo "Selecionado: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+          swift --version
+
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
