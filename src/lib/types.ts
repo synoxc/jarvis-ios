@@ -7,6 +7,20 @@ export type AssistantState = 'active' | 'sleeping' | 'processing';
 /** Quem produziu uma entrada no histórico de conversa. */
 export type Speaker = 'user' | 'jarvis' | 'system';
 
+/** Anexo de uma mensagem (imagem ou nota de voz enviada ao PC). */
+export interface ChatAttachment {
+  kind: 'image' | 'audio';
+  /** URI local (file://) para pré-visualização no iPhone. */
+  uri: string;
+  /** Nome do ficheiro no servidor (preenchido após envio bem-sucedido). */
+  serverName?: string;
+  /** Duração em segundos (áudio). */
+  durationSec?: number;
+}
+
+/** Estado de entrega de uma mensagem do utilizador. */
+export type MessageStatus = 'sending' | 'sent' | 'failed';
+
 /** Mensagem recebida pelo WebSocket principal (`/ws`). */
 export type ServerMessage =
   | { type: 'log'; speaker: Speaker; text: string }
@@ -22,6 +36,10 @@ export interface ChatMessage {
   text: string;
   /** Timestamp epoch (ms) de quando foi recebida/localmente gerada. */
   ts: number;
+  /** Anexo opcional (imagem ou áudio). */
+  attachment?: ChatAttachment;
+  /** Estado de envio — apenas em mensagens do utilizador. */
+  status?: MessageStatus;
 }
 
 /** Estado da ligação ao PC. */

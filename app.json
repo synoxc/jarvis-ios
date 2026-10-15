@@ -1,4 +1,4 @@
-﻿{
+{
   "expo": {
     "name": "JARVIS",
     "slug": "jarvis-ios",
@@ -19,7 +19,10 @@
         "NSLocalNetworkUsageDescription": "O JARVIS precisa de aceder ao teu PC na rede local para enviar comandos e receber respostas.",
         "NSHealthShareUsageDescription": "O JARVIS pode ler os teus dados de atividade fisica (passos, treinos) se tu autorizares.",
         "NSHealthUpdateUsageDescription": "O JARVIS nao escreve dados de saude.",
-        "UIBackgroundModes": ["audio", "processing"],
+        "UIBackgroundModes": [
+          "audio",
+          "processing"
+        ],
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
@@ -43,7 +46,8 @@
         {
           "faceIDPermission": "O JARVIS usa o Face ID para proteger o acesso ao teu PC."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

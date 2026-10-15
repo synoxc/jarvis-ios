@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useJarvis } from '@/state/JarvisContext';
 import { theme } from '@/theme';
+import { JarvisAvatar } from '@/components/JarvisAvatar';
 import { AssistantOrb } from '@/components/AssistantOrb';
 import { ConnectionPill } from '@/components/ConnectionPill';
 import { MessageBubble } from '@/components/MessageBubble';
@@ -24,14 +25,46 @@ export default function HomeScreen() {
     paired,
     error,
     voiceMode,
+    capabilities,
     autoSpeak,
     toggleAutoSpeak,
     sendText,
     clearMessages,
     stopSpeaking,
     speakText,
+    speakLast,
+    startDictation,
+    stopDictation,
+    startLiveAudio,
+    stopLiveAudio,
     uploadAndAnalyze,
   } = useJarvis();
+
+  const micActive = voiceMode === 'dictating';
+  const liveActive = voiceMode === 'live-audio';
+
+  const handleMicPress = () => {
+    if (micActive) stopDictation();
+    else void startDictation();
+  };
+
+  const handleLivePress = () => {
+    if (liveActive) stopLiveAudio();
+    else void startLiveAudio();
+  };
+
+  const avatarState =
+    status === 'error'
+      ? 'error'
+      : status !== 'connected'
+        ? 'offline'
+        : voiceMode === 'dictating' || voiceMode === 'live-audio'
+          ? 'listening'
+          : voiceMode === 'speaking'
+            ? 'speaking'
+            : assistantState === 'processing'
+              ? 'processing'
+              : 'idle';
 
   const listRef = useRef<FlatList>(null);
 
@@ -112,6 +145,11 @@ export default function HomeScreen() {
         </View>
       ) : (
         <>
+          {/* Avatar do JARVIS com estados reais */}
+          <View style={styles.hero}>
+            <JarvisAvatar state={avatarState} size={150} />
+          </View>
+
           {/* Dynamic Island In-App HUD */}
           <AssistantOrb state={assistantState} mode={voiceMode} />
 
@@ -137,9 +175,16 @@ export default function HomeScreen() {
           <Composer
             onSend={sendText}
             onCameraPress={uploadAndAnalyze}
+            onMicPress={handleMicPress}
+            onLivePress={handleLivePress}
+            onSpeakPress={speakLast}
             onStopPress={stopSpeaking}
             speaking={voiceMode === 'speaking'}
+            micActive={micActive}
+            liveActive={liveActive}
             disabled={status !== 'connected'}
+            dictationAvailable={capabilities.dictation}
+            liveAudioAvailable={capabilities.liveAudio}
           />
         </>
       )}
@@ -197,6 +242,11 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+  },
+  hero: {
+    alignItems: 'center',
+    paddingTop: 6,
+    paddingBottom: 2,
   },
   listContent: {
     paddingVertical: 12,

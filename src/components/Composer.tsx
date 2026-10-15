@@ -9,6 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { theme } from '@/theme';
+import * as Haptics from 'expo-haptics';
 
 const QUICK_ACTIONS = [
   'Que horas são?',
@@ -18,13 +19,7 @@ const QUICK_ACTIONS = [
   'Quem és tu?',
 ];
 
-export function Composer({
-  onSend,
-  onCameraPress,
-  onStopPress,
-  speaking,
-  disabled,
-}: {
+export interface ComposerProps {
   onSend: (text: string) => void;
   onCameraPress?: () => void;
   onMicPress?: () => void;
@@ -38,19 +33,49 @@ export function Composer({
   disabled: boolean;
   dictationAvailable?: boolean;
   liveAudioAvailable?: boolean;
-}) {
+}
+
+export function Composer({
+  onSend,
+  onCameraPress,
+  onMicPress,
+  onLivePress,
+  onSpeakPress,
+  onStopPress,
+  busy,
+  micActive,
+  liveActive,
+  speaking,
+  disabled,
+  dictationAvailable,
+  liveAudioAvailable,
+}: ComposerProps) {
   const [text, setText] = useState('');
 
   const submit = () => {
     const t = text.trim();
-    if (!t || disabled) return;
+    if (!t || disabled || busy) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     onSend(t);
     setText('');
   };
 
   const handleChip = (prompt: string) => {
-    if (disabled) return;
+    if (disabled || busy) return;
+    Haptics.selectionAsync().catch(() => {});
     onSend(prompt);
+  };
+
+  const pressMic = () => {
+    if (disabled || !onMicPress) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    onMicPress();
+  };
+
+  const pressLive = () => {
+    if (disabled || !onLivePress) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    onLivePress();
   };
 
   return (
@@ -116,6 +141,49 @@ export function Composer({
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Voice + actions row */}
+      {!disabled && (
+        <View style={styles.voiceRow}>
+          <TouchableOpacity
+            style={[styles.voiceBtn, micActive && styles.voiceBtnActive]}
+            onPress={pressMic}
+            disabled={!onMicPress}
+            activeOpacity={0.7}
+            accessibilityLabel={micActive ? 'Parar ditado' : 'Ditar por voz'}
+          >
+            <Text style={styles.voiceIcon}>{micActive ? '⏹️' : '🎙️'}</Text>
+            <Text style={styles.voiceLabel}>
+              {micActive ? 'A ouvir…' : dictationAvailable === false ? 'Ditado (teclado)' : 'Ditar'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.voiceBtn, liveActive && styles.voiceBtnActiveLive]}
+            onPress={pressLive}
+            disabled={!onLivePress}
+            activeOpacity={0.7}
+            accessibilityLabel={liveActive ? 'Terminar voz ao vivo' : 'Voz ao vivo'}
+          >
+            <Text style={styles.voiceIcon}>{liveActive ? '⏹️' : '🌟'}</Text>
+            <Text style={styles.voiceLabel}>
+              {liveActive ? 'Ao vivo…' : liveAudioAvailable === false ? 'Ao vivo (nativo)' : 'Ao vivo'}
+            </Text>
+          </TouchableOpacity>
+
+          {onSpeakPress ? (
+            <TouchableOpacity
+              style={styles.voiceBtn}
+              onPress={onSpeakPress}
+              activeOpacity={0.7}
+              accessibilityLabel="Ouvir última resposta"
+            >
+              <Text style={styles.voiceIcon}>🔊</Text>
+              <Text style={styles.voiceLabel}>Ouvir</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      )}
 
       {/* Mic Hint */}
       <View style={styles.hintRow}>
@@ -216,6 +284,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     shadowOpacity: 0,
   },
+  voiceRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  voiceBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 16,
+    paddingVertical: 9,
+  },
+  voiceBtnActive: {
+    borderColor: '#34d399',
+    backgroundColor: '#052e26',
+  },
+  voiceBtnActiveLive: {
+    borderColor: '#22d3ee',
+    backgroundColor: '#083344',
+  },
+  voiceIcon: { fontSize: 14 },
+  voiceLabel: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   hintRow: {
     marginTop: 6,
     alignItems: 'center',
