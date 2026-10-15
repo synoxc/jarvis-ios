@@ -58,8 +58,11 @@ interface JarvisContextValue {
   voiceMode: VoiceMode;
   autoSpeak: boolean;
   toggleAutoSpeak: () => void;
-  startDictation: () => Promise<void>;
+  startDictation: (opts?: { continuous?: boolean }) => Promise<void>;
   stopDictation: () => void;
+  /** Ditado sempre ativo (escuta contínua após emparelar). */
+  alwaysOnDictation: boolean;
+  setAlwaysOnDictation: (on: boolean) => void;
   startLiveAudio: () => Promise<void>;
   stopLiveAudio: () => void;
   speakLast: () => void;
@@ -92,6 +95,19 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState<VoiceMode>('idle');
   const [autoSpeak, setAutoSpeak] = useState(true);
+  const [alwaysOnDictation, setAlwaysOnDictation] = useState(true);
+
+  const alwaysOnRef = useRef(alwaysOnDictation);
+  useEffect(() => {
+    alwaysOnRef.current = alwaysOnDictation;
+  }, [alwaysOnDictation]);
+  /** Texto estavel ja enviado no ditado continuo (evita duplicados). */
+  const stableTextRef = useRef<{ full: string; sent: string; timer: ReturnType<typeof setTimeout> | null }>(
+    { full: '', sent: '', timer: null },
+  );
+
+  /** Falhas consecutivas de ditado — após 3, desliga o always-on (evita loop). */
+  const errorStreakRef = useRef(0);
 
   const socketRef = useRef<JarvisSocket | null>(null);
   const liveAudioRef = useRef<LiveAudioService | null>(null);
@@ -312,60 +328,142 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
     setMessages([]);
   }, []);
 
-  const startDictation = useCallback(async () => {
-    if (!capabilities.dictation) {
-      setError(DICTATION_UNAVAILABLE_MESSAGE);
-      return;
-    }
-    const ok = await voice.requestVoicePermissions();
-    if (!ok) {
-      setError('Permissao de microfone/voz negada.');
-      return;
-    }
-    setVoiceMode('dictating');
-    const handle = voice.startDictation({
-      onPartial: (partial) => {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last && last.id === '__partial__') {
-            return [...prev.slice(0, -1), { ...last, text: partial }];
-          }
-          return [
-            ...prev,
-            { id: '__partial__', speaker: 'user', text: partial, ts: Date.now() },
-          ];
-        });
-      },
-      onResult: (finalText) => {
-        setMessages((prev) => {
-          const withoutPartial = prev.filter((m) => m.id !== '__partial__');
-          return [
-            ...withoutPartial,
-            { id: nextId(), speaker: 'user', text: finalText, ts: Date.now() },
-          ];
-        });
-        sendText(finalText);
-        setVoiceMode('idle');
-      },
-      onError: (message) => {
-        setMessages((prev) => prev.filter((m) => m.id !== '__partial__'));
-        setError(message);
-        setVoiceMode('idle');
-      },
-      onDone: () => {
+  const startDictationRef = useRef<(opts?: { continuous?: boolean }) => Promise<void>>(
+    async () => {},
+  );
+  /** Pausa temporária (fala do JARVIS / áudio ao vivo) — não desliga o always-on. */
+  const pausedRef = useRef(false);
+
+  const startDictation = useCallback(
+    async (opts?: { continuous?: boolean }) => {
+      const continuous = opts?.continuous ?? alwaysOnRef.current;
+      if (!capabilities.dictation) {
+        setError(DICTATION_UNAVAILABLE_MESSAGE);
+        return;
+      }
+      if (dictationStopRef.current) return; // já está a correr
+      // Sentinel: bloqueia arranques duplicados enquanto pede permissão.
+      dictationStopRef.current = () => {};
+      const ok = await voice.requestVoicePermissions();
+      if (!ok) {
+        setError('Permissao de microfone/voz negada.');
         dictationStopRef.current = null;
-        setVoiceMode((m) => (m === 'dictating' ? 'idle' : m));
-      },
-    });
-    dictationStopRef.current = handle.stop;
-  }, [capabilities, sendText]);
+        if (continuous) {
+          alwaysOnRef.current = false;
+          setAlwaysOnDictation(false);
+        }
+        return;
+      }
+      pausedRef.current = false;
+      const stable = stableTextRef.current;
+      stable.full = '';
+      stable.sent = '';
+      if (stable.timer) {
+        clearTimeout(stable.timer);
+        stable.timer = null;
+      }
+      setVoiceMode('dictating');
+      const handle = voice.startDictation({
+        continuous,
+        onPartial: (partial) => {
+          stable.full = partial;
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.id === '__partial__') {
+              return [...prev.slice(0, -1), { ...last, text: partial }];
+            }
+            return [
+              ...prev,
+              { id: '__partial__', speaker: 'user', text: partial, ts: Date.now() },
+            ];
+          });
+        },
+        onResult: (finalText) => {
+          // Ditado contínuo: o iOS costuma repetir o transcrito acumulado —
+          // envia apenas o trecho novo face ao último envio.
+          let toSend = finalText;
+          if (stable.sent && finalText.startsWith(stable.sent)) {
+            toSend = finalText.slice(stable.sent.length).trim();
+          } else if (finalText === stable.sent) {
+            toSend = '';
+          }
+          if (toSend) {
+            setMessages((prev) => {
+              const withoutPartial = prev.filter((m) => m.id !== '__partial__');
+              return [
+                ...withoutPartial,
+                { id: nextId(), speaker: 'user', text: toSend, ts: Date.now() },
+              ];
+            });
+            sendText(toSend);
+          } else {
+            setMessages((prev) => prev.filter((m) => m.id !== '__partial__'));
+          }
+          errorStreakRef.current = 0;
+          stable.full = finalText;
+          stable.sent = finalText;
+          if (!continuous) setVoiceMode('idle');
+        },
+        onError: (message) => {
+          dictationStopRef.current = null;
+          setMessages((prev) => prev.filter((m) => m.id !== '__partial__'));
+          setError(message);
+          errorStreakRef.current += 1;
+          if (errorStreakRef.current >= 3 && alwaysOnRef.current) {
+            alwaysOnRef.current = false;
+            setAlwaysOnDictation(false);
+          }
+          setVoiceMode('idle');
+        },
+        onDone: () => {
+          dictationStopRef.current = null;
+          if (pausedRef.current) {
+            pausedRef.current = false;
+            return; // pausa deliberada — o efeito always-on retoma em 'idle'
+          }
+          setVoiceMode((m) => (m === 'dictating' ? 'idle' : m));
+        },
+      });
+      dictationStopRef.current = handle.stop;
+    },
+    [capabilities, sendText],
+  );
+
+  useEffect(() => {
+    startDictationRef.current = startDictation;
+  }, [startDictation]);
 
   const stopDictation = useCallback(() => {
+    // Paragem explícita do utilizador: desliga o always-on para não reiniciar.
+    alwaysOnRef.current = false;
+    setAlwaysOnDictation(false);
+    pausedRef.current = false;
     dictationStopRef.current?.();
     dictationStopRef.current = null;
     setMessages((prev) => prev.filter((m) => m.id !== '__partial__'));
     setVoiceMode('idle');
   }, []);
+
+  /**
+   * Ditado sempre ativo: arranca sozinho quando ligado, pausa durante a fala
+   * do JARVIS / áudio ao vivo (evita eco) e retoma quando volta a 'idle'.
+   */
+  useEffect(() => {
+    if (!capabilities.dictation) return;
+    if (voiceMode === 'speaking' || voiceMode === 'live-audio') {
+      if (dictationStopRef.current) {
+        pausedRef.current = true;
+        const stop = dictationStopRef.current;
+        dictationStopRef.current = null;
+        stop();
+      }
+      return;
+    }
+    if (voiceMode !== 'idle') return;
+    if (!alwaysOnDictation || status !== 'connected') return;
+    if (dictationStopRef.current) return;
+    void startDictationRef.current({ continuous: true });
+  }, [capabilities.dictation, voiceMode, alwaysOnDictation, status]);
 
   const startLiveAudio = useCallback(async () => {
     if (!capabilities.liveAudio) {
@@ -470,6 +568,8 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
       toggleAutoSpeak,
       startDictation,
       stopDictation,
+      alwaysOnDictation,
+      setAlwaysOnDictation,
       startLiveAudio,
       stopLiveAudio,
       speakLast,
@@ -482,7 +582,7 @@ export function JarvisProvider({ children }: { children: React.ReactNode }) {
       pairWithPin, pairWithQr, reconnect, disconnect, sendText, clearMessages,
       voiceMode, autoSpeak, toggleAutoSpeak, startDictation, stopDictation,
       startLiveAudio, stopLiveAudio, speakLast, speakText,
-      uploadAndAnalyze, stopSpeaking,
+      uploadAndAnalyze, stopSpeaking, alwaysOnDictation, setAlwaysOnDictation,
     ],
   );
 

@@ -1,4 +1,4 @@
-﻿import { useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useRef, useEffect } from 'react';
 import {
   View,
@@ -8,10 +8,11 @@ import {
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useJarvis } from '@/state/JarvisContext';
 import { theme } from '@/theme';
 import { JarvisAvatar } from '@/components/JarvisAvatar';
-import { AssistantOrb } from '@/components/AssistantOrb';
+import { DynamicBar } from '@/components/DynamicBar';
 import { ConnectionPill } from '@/components/ConnectionPill';
 import { MessageBubble } from '@/components/MessageBubble';
 import { Composer } from '@/components/Composer';
@@ -27,6 +28,8 @@ export default function HomeScreen() {
     voiceMode,
     capabilities,
     autoSpeak,
+    alwaysOnDictation,
+    setAlwaysOnDictation,
     toggleAutoSpeak,
     sendText,
     clearMessages,
@@ -38,6 +41,7 @@ export default function HomeScreen() {
     startLiveAudio,
     stopLiveAudio,
     uploadAndAnalyze,
+    reconnect,
   } = useJarvis();
 
   const micActive = voiceMode === 'dictating';
@@ -45,7 +49,10 @@ export default function HomeScreen() {
 
   const handleMicPress = () => {
     if (micActive) stopDictation();
-    else void startDictation();
+    else {
+      setAlwaysOnDictation(true);
+      void startDictation({ continuous: true });
+    }
   };
 
   const handleLivePress = () => {
@@ -76,126 +83,137 @@ export default function HomeScreen() {
     }
   }, [messages.length]);
 
+  const handleBarPress = () => {
+    if (status !== 'connected') void reconnect();
+  };
+
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.brandWrap}>
-          <Text style={styles.title}>JARVIS</Text>
-          <ConnectionPill status={status} />
-        </View>
+    <LinearGradient colors={[...theme.gradient.bg]} style={styles.safe}>
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        {/* Dynamic Island bar — estado do JARVIS em tempo real */}
+        <DynamicBar status={status} state={avatarState} onPress={handleBarPress} />
 
-        <View style={styles.headerActions}>
-          {/* Voice Toggle */}
-          <TouchableOpacity
-            onPress={toggleAutoSpeak}
-            style={[styles.iconBtn, autoSpeak && styles.iconBtnActive]}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.iconText}>{autoSpeak ? '🔊' : '🔇'}</Text>
-          </TouchableOpacity>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.brandWrap}>
+            <Text style={styles.title}>JARVIS</Text>
+            <ConnectionPill status={status} onPress={() => void reconnect()} />
+            {alwaysOnDictation && capabilities.dictation ? (
+              <View style={styles.alwaysOnChip}>
+                <Text style={styles.alwaysOnText}>SEMPRE ATIVO</Text>
+              </View>
+            ) : null}
+          </View>
 
-          {/* Fitness */}
-          <TouchableOpacity
-            onPress={() => router.push('/fitness')}
-            style={styles.iconBtn}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.iconText}>⚡</Text>
-          </TouchableOpacity>
-
-          {/* Clear */}
-          <TouchableOpacity
-            onPress={clearMessages}
-            style={styles.iconBtn}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.iconText}>🗑️</Text>
-          </TouchableOpacity>
-
-          {/* Settings */}
-          <TouchableOpacity
-            onPress={() => router.push('/settings')}
-            style={styles.iconBtn}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.iconText}>⚙️</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {!paired ? (
-        <View style={styles.center}>
-          <View style={styles.unpairedCard}>
-            <View style={styles.unpairedRing}>
-              <Text style={styles.unpairedIcon}>🌐</Text>
-            </View>
-            <Text style={styles.notPaired}>JARVIS NEURAL LINK</Text>
-            <Text style={styles.notPairedSub}>
-              Liga o teu iPhone ao PC para ativar a inteligência artificial, voz e controlo remoto.
-            </Text>
+          <View style={styles.headerActions}>
             <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => router.push('/pair')}
-              activeOpacity={0.8}
+              onPress={toggleAutoSpeak}
+              style={[styles.iconBtn, autoSpeak && styles.iconBtnActive]}
+              activeOpacity={0.7}
+              accessibilityLabel={autoSpeak ? 'Desativar respostas por voz' : 'Ativar respostas por voz'}
             >
-              <Text style={styles.primaryBtnText}>Emparelhar agora</Text>
+              <Text style={styles.iconText}>{autoSpeak ? '🔊' : '🔇'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push('/fitness')}
+              style={styles.iconBtn}
+              activeOpacity={0.7}
+              accessibilityLabel="Fitness"
+            >
+              <Text style={styles.iconText}>⚡</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={clearMessages}
+              style={styles.iconBtn}
+              activeOpacity={0.7}
+              accessibilityLabel="Limpar conversa"
+            >
+              <Text style={styles.iconText}>🗑️</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push('/settings')}
+              style={styles.iconBtn}
+              activeOpacity={0.7}
+              accessibilityLabel="Definições"
+            >
+              <Text style={styles.iconText}>⚙️</Text>
             </TouchableOpacity>
           </View>
         </View>
-      ) : (
-        <>
-          {/* Avatar do JARVIS com estados reais */}
-          <View style={styles.hero}>
-            <JarvisAvatar state={avatarState} size={150} />
-          </View>
 
-          {/* Dynamic Island In-App HUD */}
-          <AssistantOrb state={assistantState} mode={voiceMode} />
-
-          {/* Conversation List */}
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={(m) => m.id}
-            renderItem={({ item }) => (
-              <MessageBubble message={item} onSpeak={speakText} />
-            )}
-            style={styles.list}
-            contentContainerStyle={styles.listContent}
-          />
-
-          {error ? (
-            <View style={styles.errorBar}>
-              <Text style={styles.errorText}>{error}</Text>
+        {!paired ? (
+          <View style={styles.center}>
+            <View style={styles.unpairedCard}>
+              <View style={styles.unpairedRing}>
+                <Text style={styles.unpairedIcon}>🌐</Text>
+              </View>
+              <Text style={styles.notPaired}>JARVIS NEURAL LINK</Text>
+              <Text style={styles.notPairedSub}>
+                Liga o teu iPhone ao PC para ativar a inteligência artificial, voz e controlo remoto.
+              </Text>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => router.push('/pair')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.primaryBtnText}>Emparelhar agora</Text>
+              </TouchableOpacity>
             </View>
-          ) : null}
+          </View>
+        ) : (
+          <>
+            {/* Avatar do JARVIS com estados reais */}
+            <View style={styles.hero}>
+              <JarvisAvatar state={avatarState} size={130} />
+            </View>
 
-          {/* Modern Composer */}
-          <Composer
-            onSend={sendText}
-            onCameraPress={uploadAndAnalyze}
-            onMicPress={handleMicPress}
-            onLivePress={handleLivePress}
-            onSpeakPress={speakLast}
-            onStopPress={stopSpeaking}
-            speaking={voiceMode === 'speaking'}
-            micActive={micActive}
-            liveActive={liveActive}
-            disabled={status !== 'connected'}
-            dictationAvailable={capabilities.dictation}
-            liveAudioAvailable={capabilities.liveAudio}
-          />
-        </>
-      )}
-    </SafeAreaView>
+            {/* Conversation List */}
+            <FlatList
+              ref={listRef}
+              data={messages}
+              keyExtractor={(m) => m.id}
+              renderItem={({ item }) => (
+                <MessageBubble message={item} onSpeak={speakText} />
+              )}
+              style={styles.list}
+              contentContainerStyle={styles.listContent}
+            />
+
+            {error ? (
+              <View style={styles.errorBar}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            {/* Modern Composer */}
+            <Composer
+              onSend={sendText}
+              onCameraPress={uploadAndAnalyze}
+              onMicPress={handleMicPress}
+              onLivePress={handleLivePress}
+              onSpeakPress={speakLast}
+              onStopPress={stopSpeaking}
+              speaking={voiceMode === 'speaking'}
+              micActive={micActive}
+              liveActive={liveActive}
+              disabled={status !== 'connected'}
+              dictationAvailable={capabilities.dictation}
+              liveAudioAvailable={capabilities.liveAudio}
+            />
+          </>
+        )}
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#050811',
+    backgroundColor: theme.colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -204,20 +222,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 4,
     paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#0f172a',
   },
   brandWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
+    flexShrink: 1,
   },
   title: {
-    color: '#22d3ee',
-    fontSize: 22,
+    color: theme.colors.primary,
+    fontSize: 20,
     fontWeight: '900',
     letterSpacing: 2.5,
     fontFamily: theme.font.mono,
+  },
+  alwaysOnChip: {
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.colors.listening + '66',
+    backgroundColor: theme.colors.listening + '1a',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  alwaysOnText: {
+    color: theme.colors.listening,
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
   headerActions: {
     flexDirection: 'row',
@@ -227,14 +258,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#0e1726',
+    backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: theme.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconBtnActive: {
-    borderColor: '#22d3ee',
+    borderColor: theme.colors.primary,
     backgroundColor: '#083344',
   },
   iconText: {
@@ -245,11 +276,12 @@ const styles = StyleSheet.create({
   },
   hero: {
     alignItems: 'center',
-    paddingTop: 6,
+    paddingTop: 2,
     paddingBottom: 2,
   },
   listContent: {
     paddingVertical: 12,
+    paddingHorizontal: 4,
   },
   center: {
     flex: 1,
@@ -258,10 +290,10 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   unpairedCard: {
-    backgroundColor: '#0c1322',
-    borderWidth: 1.5,
-    borderColor: '#1e293b',
-    borderRadius: 24,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.xl,
     padding: 28,
     alignItems: 'center',
     width: '100%',
@@ -273,7 +305,7 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     backgroundColor: '#082f49',
     borderWidth: 1.5,
-    borderColor: '#22d3ee',
+    borderColor: theme.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -282,7 +314,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
   },
   notPaired: {
-    color: '#f8fafc',
+    color: theme.colors.text,
     fontSize: 18,
     fontWeight: '800',
     letterSpacing: 1.5,
@@ -290,22 +322,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   notPairedSub: {
-    color: '#64748b',
+    color: theme.colors.textDim,
     fontSize: 13,
     marginTop: 8,
     textAlign: 'center',
     lineHeight: 18,
   },
   primaryBtn: {
-    backgroundColor: '#22d3ee',
+    backgroundColor: theme.colors.primary,
     borderRadius: 20,
     paddingHorizontal: 28,
     paddingVertical: 13,
     marginTop: 22,
-    shadowColor: '#22d3ee',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
+    ...theme.glow.soft,
   },
   primaryBtnText: {
     color: '#070b13',
@@ -323,7 +352,7 @@ const styles = StyleSheet.create({
     borderColor: '#f43f5e44',
   },
   errorText: {
-    color: '#fb7185',
+    color: theme.colors.danger,
     fontSize: 12,
     textAlign: 'center',
     fontWeight: '500',

@@ -43,6 +43,7 @@ export function startDictation(handlers: {
   onResult?: ResultHandler;
   onError?: ErrorHandler;
   onDone?: DoneHandler;
+  continuous?: boolean;
 }): { stop: () => void } {
   if (!ExpoSpeechRecognitionModule) {
     handlers.onError?.(DICTATION_UNAVAILABLE_MESSAGE);
@@ -70,7 +71,7 @@ export function startDictation(handlers: {
     mod.start({
       lang: LOCALE_PT_PT,
       interimResults: true,
-      continuous: false,
+      continuous: handlers.continuous ?? false,
       iosCategory: {
         category: 'playAndRecord',
         categoryOptions: ['defaultToSpeaker', 'allowBluetooth'],

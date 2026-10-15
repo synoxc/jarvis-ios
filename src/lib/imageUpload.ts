@@ -46,7 +46,26 @@ export async function pickAndUploadImage(
     });
 
     if (!res.ok) {
-      return { ok: false, error: 'Falha ao carregar a imagem no servidor do JARVIS.' };
+      let detail = '';
+      try {
+        const body = (await res.json()) as { error?: string; detail?: string };
+        detail = body?.error || body?.detail || '';
+      } catch {
+        // corpo não-JSON (ignorado)
+      }
+      if (res.status === 401) {
+        return { ok: false, error: 'Sessão expirada — volta a emparelhar com o JARVIS.' };
+      }
+      if (res.status === 503) {
+        return {
+          ok: false,
+          error: detail || 'Uploads desativados no PC: instala python-multipart no servidor.',
+        };
+      }
+      return {
+        ok: false,
+        error: detail || 'Falha ao carregar a imagem no servidor do JARVIS.',
+      };
     }
 
     const data = (await res.json()) as { ok?: boolean; name?: string };

@@ -47,7 +47,14 @@
           "faceIDPermission": "O JARVIS usa o Face ID para proteger o acesso ao teu PC."
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O JARVIS precisa de aceder às tuas fotos para enviares imagens para análise no teu PC.",
+          "cameraPermission": "O JARVIS usa a câmara para tirares fotografias para análise no teu PC."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
